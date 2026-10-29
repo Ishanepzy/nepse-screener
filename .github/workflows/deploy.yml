@@ -1,0 +1,75 @@
+name: Build and deploy
+
+on:
+  schedule:
+    # NEPSE closes at 15:00 Nepal time (09:15 UTC). The first run picks up the closing prices; the second is a
+    # safety net, since GitHub can delay or drop scheduled runs. Off the hour to dodge GitHub's busiest minutes.
+    - cron: '40 9 * * 1-5'
+    - cron: '10 12 * * 1-5'
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      discover:
+        description: Re-scan every listed symbol (picks up new listings that rarely trade)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a deploy halfway; queue the next one instead.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+
+      # data/ holds sector lookups and the active-symbol list between runs, so a daily run only re-downloads prices.
+      - name: Restore price cache
+        uses: actions/cache/restore@v6
+        with:
+          path: data
+          key: nepse-data-${{ github.run_id }}
+          restore-keys: nepse-data-
+
+      - name: Download prices
+        run: npm run data -- ${{ inputs.discover && '--discover' || '' }}
+
+      - name: Save price cache
+        if: always() && hashFiles('data/meta.json') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: data
+          key: nepse-data-${{ github.run_id }}
+
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
