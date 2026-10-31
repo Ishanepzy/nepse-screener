@@ -13,13 +13,17 @@ interface Props {
   loading: boolean;
   error: string | null;
   selected: string | null;
-  onSelect: (symbol: string) => void;
+  /** Opens a stock; `list` is the table's current order, so the chart can step to the next / previous one. */
+  onSelect: (symbol: string, list: string[]) => void;
+  /** Sectors picked in the chips above the table (empty = all). */
+  sectors: string[];
+  onSectorsChange: (sectors: string[]) => void;
 }
 
 export function conditionLabel(c: Condition): string {
-  const op = { crossAbove: '↗', crossBelow: '↘', above: '>', below: '<', rising: 'rising', falling: 'falling' }[c.op];
+  const op = { crossAbove: 'crosses above', crossBelow: 'crosses below', above: 'above', below: 'below', rising: 'rising', falling: 'falling' }[c.op];
   if (isUnary(c.op)) return `${operandLabel(c.left)} ${op}`;
-  const f = c.factor && c.factor !== 1 && c.right.id !== 'value' ? `${c.factor}×` : '';
+  const f = c.factor && c.factor !== 1 && c.right.id !== 'value' ? `${c.factor} × ` : '';
   return `${operandLabel(c.left)} ${op} ${f}${operandLabel(c.right)}`;
 }
 
@@ -62,11 +66,19 @@ function Skeleton() {
   );
 }
 
-export function ResultsTable({ result, conditions, loading, error, selected, onSelect }: Props) {
+export function ResultsTable({ result, conditions, loading, error, selected, onSelect, sectors, onSectorsChange }: Props) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null);
 
+  // Match count per sector, over all matches, so each chip shows what picking it leaves.
+  const sectorCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of result?.rows ?? []) m.set(r.sector, (m.get(r.sector) ?? 0) + 1);
+    return [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [result]);
+
   const rows = useMemo(() => {
-    const list = [...(result?.rows ?? [])];
+    const picked = new Set(sectors);
+    const list = (result?.rows ?? []).filter((r) => picked.size === 0 || picked.has(r.sector));
     if (!sort) return list;
     const val = (r: ScreenRow): number | string => {
       if (sort.key.startsWith('hit')) {
@@ -81,7 +93,7 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
       const y = val(b);
       return (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
     });
-  }, [result, sort, conditions]);
+  }, [result, sort, conditions, sectors]);
 
   const header = (key: SortKey, label: string, cls = '', title?: string) => {
     const on = sort?.key === key;
@@ -98,22 +110,25 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
   };
 
   if (error) return <div className="card notice error">Couldn't run the scan: {error}</div>;
-  if (!result) return loading ? <Skeleton /> : <div className="card notice muted">No data yet. Click Refresh to download prices.</div>;
+  if (!result) return loading ? <Skeleton /> : <div className="card notice muted">No data yet.</div>;
+  const narrowed = sectors.length > 0 && rows.length !== result.rows.length;
 
   return (
     <section className={`card results ${loading ? 'stale' : ''}`} aria-label="Matching companies">
       <div className="results-head">
         <div>
           <h2 className="results-count">
-            {result.rows.length} {result.rows.length === 1 ? 'company' : 'companies'}
-            <span className="muted"> match, of {result.scanned} scanned</span>
+            {rows.length} {rows.length === 1 ? 'company' : 'companies'}
+            <span className="muted">
+              {narrowed ? ` match in the chosen sectors (${result.rows.length} in all)` : ` match, out of ${result.scanned} checked`}
+            </span>
           </h2>
           {conditions.length > 0 && (
             <div className="cond-chips">
               {conditions.map((c, i) => (
                 <span key={i} className="cond-chip">
                   {conditions.length > 1 && <b>C{i + 1}</b>} {conditionLabel(c)}
-                  {isCross(c.op) && <span className="muted"> · last {c.within ?? 1}</span>}
+                  {isCross(c.op) && <span className="muted"> · within {c.within ?? 1} {(c.within ?? 1) === 1 ? 'day' : 'days'}</span>}
                 </span>
               ))}
             </div>
@@ -124,15 +139,39 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
           ⤓ Export CSV
         </button>
       </div>
+      {sectorCounts.length > 1 && (
+        <div className="sector-chips" role="group" aria-label="Filter matches by sector">
+          <span className="filters-label">Sector</span>
+          <button className={`chip ${sectors.length === 0 ? 'on' : ''}`} aria-pressed={sectors.length === 0} onClick={() => onSectorsChange([])}>
+            All <span className="chip-count">{result.rows.length}</span>
+          </button>
+          {sectorCounts.map(([name, count]) => {
+            const on = sectors.includes(name);
+            return (
+              <button
+                key={name}
+                className={`chip ${on ? 'on' : ''}`}
+                aria-pressed={on}
+                title={on ? 'Click to remove this sector' : 'Show this sector (pick several to combine them)'}
+                onClick={() => onSectorsChange(on ? sectors.filter((s) => s !== name) : [...sectors, name])}
+              >
+                {name} <span className="chip-count">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {rows.length === 0 ? (
-        <p className="muted notice">No company meets {conditions.length > 1 ? 'these conditions' : 'this condition'} right now.</p>
+        <p className="muted notice">
+          {result.rows.length > 0 ? 'No matches in the chosen sectors.' : `No company meets ${conditions.length > 1 ? 'these conditions' : 'this condition'} right now.`}
+        </p>
       ) : (
         <div className="table-scroll">
           <table>
             <thead>
               <tr>
                 {header('symbol', 'Symbol', 'left')}
-                {header('close', 'LTP')}
+                {header('close', 'LTP', '', 'Last traded price')}
                 {header('changePct', 'Change', 'hide-sm')}
                 <th className="hide-sm spark-col" title="Closing price, last 60 sessions">
                   3 months
@@ -149,8 +188,8 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
                   key={r.symbol}
                   className={selected === r.symbol ? 'sel' : ''}
                   tabIndex={0}
-                  onClick={() => onSelect(r.symbol)}
-                  onKeyDown={(e) => e.key === 'Enter' && onSelect(r.symbol)}
+                  onClick={() => onSelect(r.symbol, rows.map((x) => x.symbol))}
+                  onKeyDown={(e) => e.key === 'Enter' && onSelect(r.symbol, rows.map((x) => x.symbol))}
                 >
                   <td className="left">
                     <span className="sym">{r.symbol}</span>

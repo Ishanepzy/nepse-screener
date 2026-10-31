@@ -1,5 +1,5 @@
-// The scan being edited: conditions + universe. Mirrored into the URL hash so a scan can be bookmarked or shared,
-// and optionally saved by name in localStorage.
+// The scan being edited: conditions + filters. Remembered in this browser between visits, and saved by name on
+// request. The URL stays short: it only names the open chart (`#/chart/NABIL`), so Back closes it.
 import type { Condition, Universe } from '../shared/types.ts';
 import { PRESETS } from '../shared/presets.ts';
 
@@ -21,26 +21,56 @@ export function scanFromPreset(id: string): Scan {
   return { conditions: structuredClone(p.conditions), match: p.match, universe: { ...DEFAULT_UNIVERSE } };
 }
 
-const b64encode = (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-const b64decode = (s: string) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)));
-
-export function scanToHash(scan: Scan): string {
-  return '#s=' + b64encode(JSON.stringify(scan));
+function cleanScan(s: Partial<Scan> | null | undefined): Scan | null {
+  if (!s || !Array.isArray(s.conditions)) return null;
+  return { conditions: s.conditions, match: s.match === 'any' ? 'any' : 'all', universe: { ...DEFAULT_UNIVERSE, ...s.universe } };
 }
 
-export function scanFromHash(hash: string): Scan | null {
-  const m = /^#s=([A-Za-z0-9_-]+)$/.exec(hash);
+// ---- URL: only the open chart ----
+
+export const chartHash = (symbol: string) => `#/chart/${encodeURIComponent(symbol)}`;
+
+export function chartFromHash(hash: string): string | null {
+  const m = /^#\/chart\/([^/?#]+)$/.exec(hash);
+  if (m) return decodeURIComponent(m[1]);
+  const legacy = /&c=([^&]+)$/.exec(hash); // links from before the URL was shortened
+  return legacy ? decodeURIComponent(legacy[1]) : null;
+}
+
+/** Scans used to travel in the URL (`#s=<base64 JSON>`); keep opening those links. */
+export function legacyScanFromHash(hash: string): Scan | null {
+  const m = /^#s=([A-Za-z0-9_-]+)/.exec(hash);
   if (!m) return null;
   try {
-    const s = JSON.parse(b64decode(m[1])) as Scan;
-    if (!Array.isArray(s.conditions)) return null;
-    return { conditions: s.conditions, match: s.match === 'any' ? 'any' : 'all', universe: { ...DEFAULT_UNIVERSE, ...s.universe } };
+    const json = new TextDecoder().decode(Uint8Array.from(atob(m[1].replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)));
+    return cleanScan(JSON.parse(json));
   } catch {
     return null;
   }
 }
 
+// ---- browser storage ----
+
+const CURRENT_KEY = 'nepse.currentScan';
 const SAVED_KEY = 'nepse.savedScans';
+
+export function loadCurrent(): { scan: Scan; preset: string | null } | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(CURRENT_KEY) ?? 'null');
+    const scan = cleanScan(v?.scan);
+    return scan ? { scan, preset: typeof v.preset === 'string' ? v.preset : null } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function storeCurrent(scan: Scan, preset: string | null) {
+  try {
+    localStorage.setItem(CURRENT_KEY, JSON.stringify({ scan, preset }));
+  } catch {
+    // Private mode / storage full: the scan just won't survive a reload.
+  }
+}
 
 export function loadSaved(): SavedScan[] {
   try {
@@ -55,6 +85,6 @@ export function storeSaved(list: SavedScan[]) {
   try {
     localStorage.setItem(SAVED_KEY, JSON.stringify(list));
   } catch {
-    // Private mode / storage full: saving is a convenience, the URL hash still works.
+    // Private mode / storage full: named scans are a convenience.
   }
 }

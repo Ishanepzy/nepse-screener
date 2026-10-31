@@ -22,23 +22,6 @@ npm run dev          # http://localhost:5173
 static site in `dist/`, and `npm run preview` serves it. `npm test` runs the indicator, screener and
 data-format tests. `npm run type-check` type-checks everything.
 
-## Deploy to GitHub Pages
-
-1. Create a **public** repository named `nepse-screener` on GitHub and push this project to its `main`
-   branch. Free Pages needs a public repo.
-2. In the repository, open **Settings → Pages** and set **Source** to **GitHub Actions**.
-3. Open the **Actions** tab, pick **Build and deploy**, and press **Run workflow**. The first run downloads
-   everything, so it takes a few minutes. Tick *Re-scan every listed symbol* if you like.
-4. The site goes live at `https://<your-username>.github.io/nepse-screener/`.
-
-After that, `.github/workflows/deploy.yml` runs by itself at 09:40 and 12:10 UTC (15:25 and 17:55 Nepal
-time), Monday to Friday, and on every push to `main`. A failed run leaves the previous version online.
-GitHub can start scheduled runs late when it's busy. On public repos it also pauses scheduled workflows after
-60 days without any commits, and emails you when it does; re-enable it from the Actions tab.
-
-The build uses relative paths, so the same `dist/` also works on Netlify, Cloudflare Pages, Vercel or any
-static host.
-
 ## How a scan works
 
 A scan is a list of conditions joined by **All** or **Any**. Each condition compares two sides:
@@ -51,10 +34,11 @@ A scan is a list of conditions joined by **All** or **Any**. Each condition comp
 | is rising / falling | left went up (or down) on each of the last N bars                                 |
 
 Either side can be Close/Open/High/Low, EMA, SMA, WMA, Supertrend, Bollinger (upper/middle/lower),
-N-day High/Low (excluding today, so `Close crosses above 250-day High` is a breakout), Volume,
-Avg Volume, RSI, MACD (line/signal/histogram), Stochastic (%K/%D), ADX (+DI/-DI), ATR, % change, or a
-fixed number. The `k×` button multiplies the right side, e.g. `Volume is above 2 × Avg Vol(20)` or
-`Close is above 0.95 × 52W High`.
+Highest high / Lowest low of the previous N days (so `Close crosses above Highest high 250 days` is a
+52-week breakout), Volume, Avg Volume, RSI, MACD (line/signal/histogram), Stochastic (%K/%D), ADX
+(+DI/-DI), ATR, % change, or a fixed number. **+ multiplier** compares against a multiple of the right side,
+e.g. `Volume is above 2 times Avg Volume` or `Close is above 0.95 times Highest high`. Every condition also
+shows a plain-English sentence of what it checks.
 
 Indicator formulas follow TradingView's built-ins (Wilder smoothing for RSI/ATR/ADX, population
 standard deviation for Bollinger Bands, TradingView's Supertrend), so values line up with charts traders
@@ -63,8 +47,21 @@ already use.
 The universe filters skip suspended scrips (no trade in 10 days), and by default exclude mutual funds,
 debentures, bonds and promoter shares. You can narrow by sector, price range and average daily turnover.
 
-Scans live in the URL, so a bookmark or a pasted link reopens the same scan. **My scans** saves named
-scans in the browser. Click any row for a chart with the scan's indicators and markers at past signals.
+Your current scan is remembered in the browser between visits, and **Saved scans** keeps named ones. The sector chips above the results narrow the list without re-running the scan.
+
+## Chart page
+
+Click any result to open its chart. The address becomes a short `#/chart/NABIL`, so Back returns to the
+list. From there:
+
+- **Indicators**: add any moving average, Bollinger Bands, Supertrend, highest high / lowest low, average
+  volume, RSI, MACD, Stochastic, ADX, ATR or % change, edit their settings, or remove them (also from the
+  legend's ×). Your list is remembered; the scan's own indicators are added on top while you look.
+- **Drawing tools**: trend line, ray, horizontal line, rectangle, Fibonacci retracement and a measure tool
+  (price change, % and days). Click to select, drag to move, Delete to remove. Drawings are saved per stock in
+  the browser.
+- **Full screen**, the time-range buttons, arrows at the scan's past signals, a search box to jump to any
+  stock, and ‹ › (or the ← → keys) to step through the results.
 
 ## Data
 
@@ -85,7 +82,8 @@ what the full history gives. Prices are rounded to the paisa and delta-encoded t
 shared/     indicator math, indicator registry, condition evaluation, presets, the engine the UI calls,
             and the data-file format
 pipeline/   merolagani client, cache + refresh, and build-data.ts which writes public/data/snapshot.json
-src/        React UI: market band, preset scans, condition builder, results table, chart drawer
+src/        React UI: market band, preset scans, condition builder, results table, chart page (src/chart/:
+            indicators and drawing tools)
 .github/    the daily build-and-deploy workflow
 ```
 

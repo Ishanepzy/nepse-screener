@@ -1,34 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Condition, Universe } from '../../shared/types.ts';
-import type { SectorCount } from '../api.ts';
 import type { SavedScan, Scan } from '../scan.ts';
 import { ConditionRow } from './ConditionRow.tsx';
 import { defaultOperand } from './OperandPicker.tsx';
-import { NumInput } from './NumInput.tsx';
 
 const TURNOVER_OPTIONS = [
-  { label: 'Any', value: 0 },
-  { label: '≥ 10 L', value: 1e6 },
-  { label: '≥ 50 L', value: 5e6 },
-  { label: '≥ 1 Cr', value: 1e7 },
-  { label: '≥ 5 Cr', value: 5e7 },
+  { label: 'Any amount', value: 0 },
+  { label: 'At least Rs 10 lakh', value: 1e6 },
+  { label: 'At least Rs 50 lakh', value: 5e6 },
+  { label: 'At least Rs 1 crore', value: 1e7 },
+  { label: 'At least Rs 5 crore', value: 5e7 },
 ];
 
 interface Props {
   scan: Scan;
   onChange: (s: Scan) => void;
-  sectors: SectorCount[];
   saved: SavedScan[];
   onSave: (name: string) => void;
   onLoadSaved: (s: SavedScan) => void;
   onDeleteSaved: (name: string) => void;
 }
 
-export function ScanBuilder({ scan, onChange, sectors, saved, onSave, onLoadSaved, onDeleteSaved }: Props) {
+export function ScanBuilder({ scan, onChange, saved, onSave, onLoadSaved, onDeleteSaved }: Props) {
   const setConditions = (conditions: Condition[]) => onChange({ ...scan, conditions });
   const setUniverse = (patch: Partial<Universe>) => onChange({ ...scan, universe: { ...scan.universe, ...patch } });
   const u = scan.universe;
-  const [copied, setCopied] = useState(false);
 
   const addCondition = () =>
     setConditions([...scan.conditions, { left: defaultOperand('close'), op: 'above', right: { id: 'ema', params: [200], line: 'value' }, within: 1, holds: true }]);
@@ -36,32 +32,20 @@ export function ScanBuilder({ scan, onChange, sectors, saved, onSave, onLoadSave
   return (
     <section className="card builder" aria-label="Scan conditions">
       <div className="builder-head">
-        <h2 className="section-title">Conditions</h2>
-        <div className="seg" role="group" aria-label="Match">
-          <span className="muted">Match</span>
+        <h2 className="section-title">Your scan</h2>
+        <SavedMenu saved={saved} onSave={onSave} onLoad={onLoadSaved} onDelete={onDeleteSaved} />
+      </div>
+
+      <div className="match-line">
+        <span>Show stocks that meet</span>
+        <div className="seg" role="group" aria-label="How conditions combine">
           {(['all', 'any'] as const).map((m) => (
             <button key={m} className={scan.match === m ? 'on' : ''} aria-pressed={scan.match === m} onClick={() => onChange({ ...scan, match: m })}>
-              {m === 'all' ? 'All' : 'Any'}
+              {m === 'all' ? 'all' : 'any'}
             </button>
           ))}
         </div>
-        <div className="spacer" />
-        <SavedMenu saved={saved} onSave={onSave} onLoad={onLoadSaved} onDelete={onDeleteSaved} />
-        <button
-          className="btn ghost"
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(location.href);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            } catch {
-              /* clipboard blocked; the URL bar has the same link */
-            }
-          }}
-          title="Copy a link to this scan"
-        >
-          {copied ? 'Copied ✓' : 'Copy link'}
-        </button>
+        <span>of these conditions:</span>
       </div>
 
       <div className="conds">
@@ -74,26 +58,26 @@ export function ScanBuilder({ scan, onChange, sectors, saved, onSave, onLoadSave
             onRemove={() => setConditions(scan.conditions.filter((_, j) => j !== i))}
           />
         ))}
-        {scan.conditions.length === 0 && <p className="muted empty-conds">No conditions yet. Pick a preset above or add one.</p>}
+        {scan.conditions.length === 0 && <p className="muted empty-conds">No conditions yet. Pick a quick scan above, or add your own.</p>}
         <button className="btn add" onClick={addCondition} disabled={scan.conditions.length >= 12}>
           + Add condition
         </button>
       </div>
 
       <div className="universe">
-        <SectorPicker sectors={sectors} selected={u.sectors ?? []} onChange={(s) => setUniverse({ sectors: s })} />
-        <label className="check">
+        <span className="filters-label">Filters</span>
+        <label className="check" title="Hide mutual funds, debentures, bonds and promoter shares">
           <input type="checkbox" checked={u.equityOnly !== false} onChange={(e) => setUniverse({ equityOnly: e.target.checked })} />
-          Equities only
+          Company shares only <span className="muted">(no mutual funds or debentures)</span>
         </label>
-        <label className="field">
-          <span className="muted">Price</span>
-          <NumInput value={u.minPrice ?? 0} min={0} float width="5ch" title="Minimum price" onChange={(v) => setUniverse({ minPrice: v || undefined })} />
-          <span className="muted">–</span>
-          <NumInput value={u.maxPrice ?? 0} min={0} float width="5ch" title="Maximum price (0 = no limit)" onChange={(v) => setUniverse({ maxPrice: v || undefined })} />
-        </label>
-        <label className="field">
-          <span className="muted">Avg turnover</span>
+        <span className="field">
+          <span>Price from</span>
+          <OptionalNumber value={u.minPrice} label="Lowest price" onChange={(v) => setUniverse({ minPrice: v })} />
+          <span>to</span>
+          <OptionalNumber value={u.maxPrice} label="Highest price" onChange={(v) => setUniverse({ maxPrice: v })} />
+        </span>
+        <label className="field" title="Average value traded per day over the last 20 trading days. Use it to skip thinly traded stocks.">
+          <span>Daily turnover</span>
           <select value={u.minTurnover ?? 0} onChange={(e) => setUniverse({ minTurnover: Number(e.target.value) || undefined })}>
             {TURNOVER_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
@@ -104,6 +88,35 @@ export function ScanBuilder({ scan, onChange, sectors, saved, onSave, onLoadSave
         </label>
       </div>
     </section>
+  );
+}
+
+/** Number box that can be left empty (= no limit). */
+function OptionalNumber({ value, onChange, label }: { value: number | undefined; onChange: (v: number | undefined) => void; label: string }) {
+  const [text, setText] = useState(value == null ? '' : String(value));
+  // Follow outside changes (preset, saved scan) without rewriting what the user is typing.
+  useEffect(() => {
+    setText((t) => {
+      const typed = t.trim() === '' ? undefined : Number(t);
+      return typed === value ? t : value == null ? '' : String(value);
+    });
+  }, [value]);
+  return (
+    <input
+      className="num"
+      inputMode="decimal"
+      placeholder="any"
+      aria-label={label}
+      title={label}
+      style={{ width: 'calc(6ch + 18px)' }}
+      value={text}
+      onChange={(e) => {
+        const t = e.target.value;
+        setText(t);
+        if (t.trim() === '') onChange(undefined);
+        else if (Number.isFinite(Number(t)) && Number(t) >= 0) onChange(Number(t));
+      }}
+    />
   );
 }
 
@@ -125,35 +138,6 @@ function usePopover() {
   return { open, setOpen, ref };
 }
 
-function SectorPicker({ sectors, selected, onChange }: { sectors: SectorCount[]; selected: string[]; onChange: (s: string[]) => void }) {
-  const { open, setOpen, ref } = usePopover();
-  const label = selected.length === 0 ? 'All sectors' : selected.length === 1 ? selected[0] : `${selected.length} sectors`;
-  const toggle = (name: string) => onChange(selected.includes(name) ? selected.filter((s) => s !== name) : [...selected, name]);
-  return (
-    <div className="popover-wrap" ref={ref}>
-      <button className="btn select-like" aria-expanded={open} onClick={() => setOpen(!open)}>
-        {label} <span className="caret">▾</span>
-      </button>
-      {open && (
-        <div className="popover sector-pop">
-          <div className="pop-actions">
-            <button className="link" onClick={() => onChange([])}>
-              All sectors
-            </button>
-          </div>
-          {sectors.map((s) => (
-            <label key={s.name} className="check pop-item">
-              <input type="checkbox" checked={selected.includes(s.name)} onChange={() => toggle(s.name)} />
-              <span>{s.name}</span>
-              <span className="muted count">{s.count}</span>
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function SavedMenu({
   saved,
   onSave,
@@ -169,11 +153,12 @@ function SavedMenu({
   const [name, setName] = useState('');
   return (
     <div className="popover-wrap" ref={ref}>
-      <button className="btn ghost" aria-expanded={open} onClick={() => setOpen(!open)}>
-        My scans{saved.length ? ` (${saved.length})` : ''} <span className="caret">▾</span>
+      <button className="btn" aria-expanded={open} onClick={() => setOpen(!open)} title="Save this scan, or open one you saved before">
+        ☆ Saved scans{saved.length ? ` (${saved.length})` : ''} <span className="caret">▾</span>
       </button>
       {open && (
         <div className="popover saved-pop">
+          <p className="pop-help">Save these conditions and filters under a name, then reopen them any time. They're kept in this browser only.</p>
           <form
             className="save-row"
             onSubmit={(e) => {
@@ -183,12 +168,12 @@ function SavedMenu({
               setName('');
             }}
           >
-            <input placeholder="Name this scan" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
+            <input placeholder="e.g. Banks breaking out" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} aria-label="Name for this scan" />
             <button className="btn primary" type="submit" disabled={!name.trim()}>
               Save
             </button>
           </form>
-          {saved.length === 0 && <p className="muted small">Saved scans live in this browser.</p>}
+          {saved.length > 0 && <div className="pop-sub">Your saved scans</div>}
           {saved.map((s) => (
             <div key={s.name} className="saved-item">
               <button
@@ -200,7 +185,7 @@ function SavedMenu({
               >
                 {s.name}
               </button>
-              <button className="icon-btn" aria-label={`Delete ${s.name}`} onClick={() => onDelete(s.name)}>
+              <button className="icon-btn" aria-label={`Delete ${s.name}`} title="Delete" onClick={() => onDelete(s.name)}>
                 ×
               </button>
             </div>

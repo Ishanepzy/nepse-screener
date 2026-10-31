@@ -8,6 +8,9 @@ export interface ParamDef {
   max: number;
   /** Non-integer params (multipliers, constants). */
   float?: boolean;
+  /** Words shown around the input box in the UI, e.g. `[20] days` or `fast [12]`. */
+  before?: string;
+  after?: string;
 }
 
 export interface IndicatorDef {
@@ -23,7 +26,13 @@ export interface IndicatorDef {
   compute: (b: Bars, p: number[]) => Record<string, ta.Series>;
 }
 
-const period = (def: number, label = 'Period'): ParamDef => ({ label, default: def, min: 1, max: 500 });
+const period = (def: number, label = 'Period', ui: Pick<ParamDef, 'before' | 'after'> = { after: 'days' }): ParamDef => ({
+  label,
+  default: def,
+  min: 1,
+  max: 500,
+  ...ui,
+});
 const one = (s: ta.Series) => ({ value: s });
 const VALUE = [{ key: 'value', label: 'Value' }];
 
@@ -34,7 +43,7 @@ export const INDICATORS: IndicatorDef[] = [
   { id: 'low', label: 'Low', short: 'Low', params: [], lines: VALUE, pane: 'price', compute: (b) => one(b.l) },
   {
     id: 'value',
-    label: 'Number',
+    label: 'Fixed number',
     short: '',
     params: [{ label: 'Value', default: 0, min: -1e12, max: 1e12, float: true }],
     lines: VALUE,
@@ -48,7 +57,7 @@ export const INDICATORS: IndicatorDef[] = [
     id: 'bb',
     label: 'Bollinger',
     short: 'BB',
-    params: [period(20), { label: 'StdDev', default: 2, min: 0.1, max: 10, float: true }],
+    params: [period(20), { label: 'StdDev', default: 2, min: 0.1, max: 10, float: true, before: '×', after: 'std dev' }],
     lines: [
       { key: 'upper', label: 'Upper' },
       { key: 'middle', label: 'Middle' },
@@ -61,14 +70,14 @@ export const INDICATORS: IndicatorDef[] = [
     id: 'supertrend',
     label: 'Supertrend',
     short: 'Supertrend',
-    params: [period(10, 'ATR period'), { label: 'Factor', default: 3, min: 0.1, max: 20, float: true }],
+    params: [period(10, 'ATR period'), { label: 'Factor', default: 3, min: 0.1, max: 20, float: true, before: '×' }],
     lines: VALUE,
     pane: 'price',
     compute: (b, [n, f]) => one(ta.supertrend(b.h, b.l, b.c, n, f).line),
   },
   {
     id: 'hh',
-    label: 'N-day High',
+    label: 'Highest high',
     short: 'High',
     params: [period(250, 'Days')],
     lines: VALUE,
@@ -77,7 +86,7 @@ export const INDICATORS: IndicatorDef[] = [
   },
   {
     id: 'll',
-    label: 'N-day Low',
+    label: 'Lowest low',
     short: 'Low',
     params: [period(250, 'Days')],
     lines: VALUE,
@@ -99,7 +108,7 @@ export const INDICATORS: IndicatorDef[] = [
     id: 'macd',
     label: 'MACD',
     short: 'MACD',
-    params: [period(12, 'Fast'), period(26, 'Slow'), period(9, 'Signal')],
+    params: [period(12, 'Fast', { before: 'fast' }), period(26, 'Slow', { before: 'slow' }), period(9, 'Signal', { before: 'signal' })],
     lines: [
       { key: 'macd', label: 'Line' },
       { key: 'signal', label: 'Signal' },
@@ -112,7 +121,7 @@ export const INDICATORS: IndicatorDef[] = [
     id: 'stoch',
     label: 'Stochastic',
     short: 'Stoch',
-    params: [period(14, '%K length'), period(3, '%K smooth'), period(3, '%D smooth')],
+    params: [period(14, '%K length'), period(3, '%K smooth', { before: 'smooth' }), period(3, '%D smooth', { before: '%D' })],
     lines: [
       { key: 'k', label: '%K' },
       { key: 'd', label: '%D' },
@@ -124,7 +133,7 @@ export const INDICATORS: IndicatorDef[] = [
     id: 'adx',
     label: 'ADX / DMI',
     short: 'ADX',
-    params: [period(14, 'DI length'), period(14, 'ADX smooth')],
+    params: [period(14, 'DI length'), period(14, 'ADX smooth', { before: 'smooth' })],
     lines: [
       { key: 'adx', label: 'ADX' },
       { key: 'pdi', label: '+DI' },

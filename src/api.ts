@@ -32,6 +32,9 @@ export const api = {
     return { asOf: ds.asOf, builtAt: ds.builtAt, symbols: ds.bars.size };
   },
   sectors: async (): Promise<SectorCount[]> => (await engine()).sectors(),
+  /** Every stock in the data, for the chart page's search box. */
+  symbols: async (): Promise<{ symbol: string; name: string }[]> =>
+    [...(await engine()).ds.companies.values()].map((c) => ({ symbol: c.symbol, name: c.name })).sort((a, b) => a.symbol.localeCompare(b.symbol)),
   overview: async (): Promise<OverviewItem[]> => (await engine()).overview(),
   market: async (): Promise<Market> => (await engine()).market(),
   screen: async (req: ScreenRequest): Promise<ScreenResponse> => (await engine()).screen(req),
