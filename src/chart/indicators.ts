@@ -16,7 +16,7 @@ export interface ChartIndicator {
 /** Things that make sense as a chart overlay or pane (plain prices and fixed numbers don't). */
 export const CHARTABLE: { group: string; ids: string[] }[] = [
   { group: 'Moving averages', ids: ['ema', 'sma', 'wma'] },
-  { group: 'Trend & bands', ids: ['bb', 'supertrend', 'hh', 'll'] },
+  { group: 'Trend & bands', ids: ['bb', 'supertrend', 'hh', 'll', 'breakout'] },
   { group: 'Volume', ids: ['volsma'] },
   { group: 'Oscillators (own panel)', ids: ['rsi', 'macd', 'stoch', 'adx', 'atr', 'roc'] },
 ];

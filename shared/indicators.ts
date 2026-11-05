@@ -208,3 +208,47 @@ export function supertrend(h: Series, l: Series, c: Series, n: number, factor: n
 export function roc(close: Series, n: number): Series {
   return close.map((x, i) => (i < n ? NaN : ((x - close[i - n]) / close[i - n]) * 100));
 }
+
+/**
+ * Close-based breakout of the previous n days' highest high.
+ *  - `level`: the highest high of the n bars before each bar (the line drawn on the chart).
+ *  - A breakout starts when a close goes above `level`. The level it broke is remembered (`base`).
+ *  - While it holds, each further close above `level` (a new n-day high) moves `base` up to the level just broken.
+ *  - The breakout holds (`state` = 1) until a close falls back below `base`, the most recent level it broke.
+ *  - `signal` = 1 on the first later close above the breakout bar's high (the follow-through), once per breakout.
+ *  - `start` = 1 on the bar the breakout started.
+ */
+export function breakout(h: Series, c: Series, n: number) {
+  const len = c.length;
+  const level = priorHighest(h, n);
+  const state = new Array<number>(len).fill(0);
+  const start = new Array<number>(len).fill(0);
+  const signal = new Array<number>(len).fill(0);
+  const base = nanArray(len);
+  let active = false;
+  let broke = NaN;
+  let barHigh = NaN;
+  let signaled = false;
+  for (let i = 0; i < len; i++) {
+    if (!active) {
+      if (c[i] > level[i]) {
+        active = true;
+        broke = level[i];
+        barHigh = h[i];
+        signaled = false;
+        start[i] = 1;
+      }
+    } else if (c[i] < broke) {
+      active = false;
+    } else {
+      if (!signaled && c[i] > barHigh) {
+        signal[i] = 1;
+        signaled = true;
+      }
+      if (c[i] > level[i]) broke = level[i];
+    }
+    state[i] = active ? 1 : 0;
+    if (active) base[i] = broke;
+  }
+  return { level, state, start, signal, base };
+}

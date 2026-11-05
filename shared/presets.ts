@@ -1,12 +1,15 @@
-import type { Condition, Operand } from './types.ts';
+import type { Condition, Operand, Universe } from './types.ts';
 
 export interface Preset {
   id: string;
   name: string;
   description: string;
-  bias: 'bull' | 'bear' | 'neutral';
+  /** `list`: no conditions, just a filtered list of stocks (All stocks, Trend template, Stage 2 leaders). */
+  bias: 'list' | 'bull' | 'bear' | 'neutral';
   match: 'all' | 'any';
   conditions: Condition[];
+  /** Filters the preset sets. Picking a preset resets these three and keeps the user's other filters. */
+  universe?: Pick<Universe, 'trendTemplate' | 'minRs' | 'stages'>;
 }
 
 const o = (id: string, params: number[] = [], line?: string): Operand => ({ id, params, line });
@@ -29,9 +32,54 @@ const is = (left: Operand, rel: 'above' | 'below', right: Operand, factor = 1): 
   within: 1,
 });
 
+const happened = (left: Operand, within: number): Condition => ({ left, op: 'fired', right: num(0), within });
+
 const MACD = [12, 26, 9];
 
 export const PRESETS: Preset[] = [
+  {
+    id: 'all',
+    name: 'All stocks',
+    description: 'Every company share, strongest RS rating first. Sort or search the table, or add conditions below.',
+    bias: 'list',
+    match: 'all',
+    conditions: [],
+  },
+  {
+    id: 'trend-template',
+    name: 'Trend template',
+    description:
+      "Mark Minervini's 8 rules: price above a rising 200-day average and above the 50/150-day averages (stacked 50 > 150 > 200), at least 30% above the 52-week low, within 25% of the 52-week high, RS rating 70+.",
+    bias: 'list',
+    match: 'all',
+    conditions: [],
+    universe: { trendTemplate: true },
+  },
+  {
+    id: 'stage2-leaders',
+    name: 'Stage 2 leaders',
+    description: 'Weinstein Stage 2 (price above a rising 30-week average) with an RS rating of 80 or more.',
+    bias: 'list',
+    match: 'all',
+    conditions: [],
+    universe: { stages: [2], minRs: 80 },
+  },
+  {
+    id: 'breakout-21',
+    name: '21-day breakout',
+    description: "Closed above the previous 21 days' highest high in the last 3 sessions, and hasn't fallen back below it.",
+    bias: 'bull',
+    match: 'all',
+    conditions: [happened(o('breakout', [21], 'start'), 3), happened(o('breakout', [21], 'state'), 1)],
+  },
+  {
+    id: 'breakout-follow',
+    name: 'Breakout follow-through',
+    description: "After a 21-day breakout, a close above the breakout day's high in the last 3 sessions, still holding.",
+    bias: 'bull',
+    match: 'all',
+    conditions: [happened(o('breakout', [21], 'signal'), 3), happened(o('breakout', [21], 'state'), 1)],
+  },
   {
     id: 'ema9-21-up',
     name: 'EMA 9 × 21 bullish',

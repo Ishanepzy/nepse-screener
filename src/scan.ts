@@ -26,7 +26,28 @@ function cleanScan(s: Partial<Scan> | null | undefined): Scan | null {
   return { conditions: s.conditions, match: s.match === 'any' ? 'any' : 'all', universe: { ...DEFAULT_UNIVERSE, ...s.universe } };
 }
 
-// ---- URL: only the open chart ----
+// ---- URL: the page, or the open chart ----
+
+export type Page = 'screener' | 'leaders' | 'journal' | 'calculator';
+
+export const PAGES: { id: Page; label: string; title: string }[] = [
+  { id: 'screener', label: 'Screener', title: 'Scan every stock for technical signals' },
+  { id: 'leaders', label: 'Leaders', title: 'Stage 2 leaders, and the strongest and weakest stocks in each sector' },
+  { id: 'journal', label: 'Journal', title: 'Log your trades and track profit and loss' },
+  { id: 'calculator', label: 'Position size', title: 'How many shares to buy for the risk you choose' },
+];
+
+/** `#/leaders`, `#/calculator/NABIL`; the screener is the bare address. */
+export const pageHash = (page: Page, symbol?: string | null) =>
+  page === 'screener' ? '' : `#/${page}${symbol ? `/${encodeURIComponent(symbol)}` : ''}`;
+
+/** The page a hash names, or null when it names a chart. */
+export function pageFromHash(hash: string): { page: Page; symbol: string | null } | null {
+  if (chartFromHash(hash)) return null;
+  const m = /^#\/(leaders|journal|calculator)(?:\/([^/?#]+))?$/.exec(hash);
+  if (m) return { page: m[1] as Page, symbol: m[2] ? decodeURIComponent(m[2]) : null };
+  return { page: 'screener', symbol: null };
+}
 
 export const chartHash = (symbol: string) => `#/chart/${encodeURIComponent(symbol)}`;
 

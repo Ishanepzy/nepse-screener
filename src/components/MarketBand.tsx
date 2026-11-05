@@ -1,16 +1,27 @@
 import type { Market } from '../../shared/types.ts';
+import type { LiveSnapshot } from '../live.ts';
 import * as fmt from '../format.ts';
 import { Sparkline } from './Sparkline.tsx';
 
-export function MarketBand({ market }: { market: Market | null }) {
+interface Props {
+  market: Market | null;
+  /** Today's totals from the live feed, when it covers the latest session. */
+  live: LiveSnapshot | null;
+  /** The market is open and `live` is current. */
+  open: boolean;
+}
+
+export function MarketBand({ market, live, open }: Props) {
   const ix = market?.index;
   const b = market?.breadth;
   const total = b ? b.up + b.down + b.flat : 0;
   const tone = (x: number) => (x > 0 ? 'up' : x < 0 ? 'down' : '');
+  // The live feed has no index value, so during the session the index shows the last close.
+  const staleIndex = ix && market?.asOf && ix.date < market.asOf;
   return (
     <section className="card market" aria-label="Market today">
       <div className="mkt-index">
-        <span className="mkt-label">NEPSE index</span>
+        <span className="mkt-label">NEPSE index{staleIndex ? ` · ${ix.date} close` : ''}</span>
         {ix ? (
           <div className="mkt-value">
             <span className="big">{fmt.price(ix.close)}</span>
@@ -24,7 +35,9 @@ export function MarketBand({ market }: { market: Market | null }) {
       </div>
       {ix && <Sparkline values={ix.spark} width={180} height={44} />}
       <div className="mkt-breadth">
-        <span className="mkt-label">Market breadth{market?.asOf ? ` · ${market.asOf}` : ''}</span>
+        <span className="mkt-label">
+          {open && live ? `Breadth · live ${live.time}` : `Market breadth${market?.asOf ? ` · ${market.asOf}` : ''}`}
+        </span>
         {b && total > 0 ? (
           <>
             <div className="breadth-bar" role="img" aria-label={`${b.up} advancing, ${b.down} declining, ${b.flat} unchanged`}>
@@ -42,6 +55,26 @@ export function MarketBand({ market }: { market: Market | null }) {
           <span className="muted">No session data yet</span>
         )}
       </div>
+      {live && (
+        <dl className="mkt-totals" title={`From merolagani's market summary, ${live.date} ${live.time}`}>
+          <div>
+            <dt>Turnover</dt>
+            <dd>Rs {fmt.npr(live.turnover)}</dd>
+          </div>
+          <div>
+            <dt>Shares traded</dt>
+            <dd>{fmt.npr(live.shares)}</dd>
+          </div>
+          <div>
+            <dt>Trades</dt>
+            <dd>{fmt.int(live.trades)}</dd>
+          </div>
+          <div>
+            <dt>Stocks traded</dt>
+            <dd>{fmt.int(live.scrips)}</dd>
+          </div>
+        </dl>
+      )}
     </section>
   );
 }

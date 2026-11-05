@@ -1,5 +1,5 @@
 // The site has no backend: it downloads one data file (built daily by GitHub Actions) and screens in the browser.
-import type { ChartResponse, Condition, Market, Operand, ScreenRequest, ScreenResponse } from '../shared/types.ts';
+import type { ChartResponse, Condition, LeadersResponse, LiveQuote, Market, Operand, ScreenRequest, ScreenResponse } from '../shared/types.ts';
 import { Engine, type OverviewItem, type SectorCount } from '../shared/engine.ts';
 import { decodeSnapshot, type SnapshotFile } from '../shared/snapshot.ts';
 
@@ -40,4 +40,13 @@ export const api = {
   screen: async (req: ScreenRequest): Promise<ScreenResponse> => (await engine()).screen(req),
   chart: async (symbol: string, conditions: Condition[], extra: Operand[]): Promise<ChartResponse> =>
     (await engine()).chart(symbol, conditions, extra),
+  leaders: async (minTurnover?: number): Promise<LeadersResponse> => (await engine()).leaders(minTurnover),
+  /** Latest close of each symbol (for the journal's open positions). */
+  lastPrices: async (): Promise<Map<string, { close: number; date: string }>> => {
+    const m = new Map<string, { close: number; date: string }>();
+    for (const [s, b] of (await engine()).ds.bars) if (b.c.length) m.set(s, { close: b.c[b.c.length - 1], date: b.t[b.t.length - 1] });
+    return m;
+  },
+  /** Folds live prices in; returns how many stocks changed. */
+  applyLive: async (date: string, quotes: LiveQuote[]): Promise<number> => (await engine()).applyLive(date, quotes),
 };

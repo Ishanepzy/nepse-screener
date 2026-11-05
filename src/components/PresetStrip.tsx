@@ -8,6 +8,7 @@ interface Props {
 }
 
 const GROUPS: { label: string; match: (p: Preset) => boolean }[] = [
+  { label: 'Lists', match: (p) => p.bias === 'list' },
   { label: 'Bullish', match: (p) => p.bias === 'bull' },
   { label: 'Bearish', match: (p) => p.bias === 'bear' },
   { label: 'Activity', match: (p) => p.bias === 'neutral' },
@@ -24,7 +25,7 @@ export function PresetStrip({ active, overview, onPick }: Props) {
           <div className="preset-chips">
             {PRESETS.filter(g.match).map((p) => {
               const o = byId.get(p.id);
-              const tip = `${p.description}${o?.top.length ? `\nMost liquid: ${o.top.join(', ')}` : ''}`;
+              const tip = `${p.description}${o?.top.length && p.id !== 'all' ? `\nMost liquid: ${o.top.join(', ')}` : ''}`;
               return (
                 <button
                   key={p.id}

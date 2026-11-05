@@ -1,11 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Condition, ConditionHit, ScreenResponse, ScreenRow } from '../../shared/types.ts';
-import { isCross, isUnary } from '../../shared/screener.ts';
+import { STAGE_NAMES, type Stage } from '../../shared/analysis.ts';
+import { hasWhen, isUnary } from '../../shared/screener.ts';
 import { operandLabel } from '../../shared/registry.ts';
+import { api } from '../api.ts';
 import * as fmt from '../format.ts';
 import { Sparkline } from './Sparkline.tsx';
+import { RsBadge, STAGE_HELP, StageBadge, TrendTemplateBadge } from './Badges.tsx';
 
-type SortKey = 'symbol' | 'sector' | 'close' | 'changePct' | 'volume' | 'avgTurnover' | `hit${number}`;
+type SortKey = 'symbol' | 'sector' | 'close' | 'changePct' | 'volume' | 'avgTurnover' | 'rs' | 'stage' | 'tt' | `hit${number}`;
 
 interface Props {
   result: ScreenResponse | null;
@@ -18,26 +21,30 @@ interface Props {
   /** Sectors picked in the chips above the table (empty = all). */
   sectors: string[];
   onSectorsChange: (sectors: string[]) => void;
+  /** Weinstein stages picked in the chips (empty = all). */
+  stages: Stage[];
+  onStagesChange: (stages: Stage[]) => void;
 }
 
+const OP_WORDS = { crossAbove: 'crosses above', crossBelow: 'crosses below', above: 'above', below: 'below', rising: 'rising', falling: 'falling', fired: 'happened' };
+
 export function conditionLabel(c: Condition): string {
-  const op = { crossAbove: 'crosses above', crossBelow: 'crosses below', above: 'above', below: 'below', rising: 'rising', falling: 'falling' }[c.op];
-  if (isUnary(c.op)) return `${operandLabel(c.left)} ${op}`;
+  if (isUnary(c.op)) return `${operandLabel(c.left)} ${OP_WORDS[c.op]}`;
   const f = c.factor && c.factor !== 1 && c.right.id !== 'value' ? `${c.factor} × ` : '';
-  return `${operandLabel(c.left)} ${op} ${f}${operandLabel(c.right)}`;
+  return `${operandLabel(c.left)} ${OP_WORDS[c.op]} ${f}${operandLabel(c.right)}`;
 }
 
 function hitSortValue(h: ConditionHit, c: Condition): number {
   if (!h.pass) return Infinity;
-  return isCross(c.op) ? (h.barsAgo ?? 999) : -(h.left ?? -Infinity);
+  return hasWhen(c.op) ? (h.barsAgo ?? 999) : -(h.left ?? -Infinity);
 }
 
 function HitCell({ hit, cond }: { hit: ConditionHit; cond: Condition }) {
   if (!hit.pass) return <span className="muted">—</span>;
   const values = isUnary(cond.op) ? fmt.value(hit.left) : `${fmt.value(hit.left)} vs ${fmt.value(hit.right)}`;
-  if (isCross(cond.op)) {
+  if (hasWhen(cond.op)) {
     return (
-      <span title={`${hit.date} · ${values}`} className={`when ${hit.barsAgo === 0 ? 'fresh' : ''}`}>
+      <span title={cond.op === 'fired' ? hit.date : `${hit.date} · ${values}`} className={`when ${hit.barsAgo === 0 ? 'fresh' : ''}`}>
         {hit.barsAgo === 0 ? 'Today' : fmt.ago(hit.barsAgo)}
       </span>
     );
@@ -46,6 +53,7 @@ function HitCell({ hit, cond }: { hit: ConditionHit; cond: Condition }) {
 }
 
 const toneOf = (x: number | null) => (x == null || x === 0 ? '' : x > 0 ? 'up' : 'down');
+const STAGES: Stage[] = [1, 2, 3, 4];
 
 function Skeleton() {
   return (
@@ -66,19 +74,36 @@ function Skeleton() {
   );
 }
 
-export function ResultsTable({ result, conditions, loading, error, selected, onSelect, sectors, onSectorsChange }: Props) {
+export function ResultsTable({ result, conditions, loading, error, selected, onSelect, sectors, onSectorsChange, stages, onStagesChange }: Props) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null);
+  const [query, setQuery] = useState('');
+  const [allSymbols, setAllSymbols] = useState<{ symbol: string; name: string }[]>([]);
+  useEffect(() => {
+    if (query && !allSymbols.length) api.symbols().then(setAllSymbols).catch(() => {});
+  }, [query, allSymbols.length]);
 
-  // Match count per sector, over all matches, so each chip shows what picking it leaves.
+  const q = query.trim().toLowerCase();
+  const matchesQuery = (r: { symbol: string; name: string }) => !q || r.symbol.toLowerCase().includes(q) || r.name.toLowerCase().includes(q);
+
+  // Each chip row counts what the other filters leave, so a chip's number is what picking it shows.
+  const pickedSectors = useMemo(() => new Set(sectors), [sectors]);
+  const pickedStages = useMemo(() => new Set<Stage | null>(stages), [stages]);
+  const inSector = (r: ScreenRow) => pickedSectors.size === 0 || pickedSectors.has(r.sector);
+  const inStage = (r: ScreenRow) => pickedStages.size === 0 || pickedStages.has(r.stage);
+  const all = result?.rows ?? [];
   const sectorCounts = useMemo(() => {
     const m = new Map<string, number>();
-    for (const r of result?.rows ?? []) m.set(r.sector, (m.get(r.sector) ?? 0) + 1);
+    for (const r of all) if (inStage(r)) m.set(r.sector, (m.get(r.sector) ?? 0) + 1);
     return [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  }, [result]);
+  }, [result, pickedStages]);
+  const stageCounts = useMemo(() => {
+    const m = new Map<Stage | null, number>();
+    for (const r of all) if (inSector(r)) m.set(r.stage, (m.get(r.stage) ?? 0) + 1);
+    return m;
+  }, [result, pickedSectors]);
 
   const rows = useMemo(() => {
-    const picked = new Set(sectors);
-    const list = (result?.rows ?? []).filter((r) => picked.size === 0 || picked.has(r.sector));
+    const list = all.filter((r) => inSector(r) && inStage(r) && matchesQuery(r));
     if (!sort) return list;
     const val = (r: ScreenRow): number | string => {
       if (sort.key.startsWith('hit')) {
@@ -93,12 +118,12 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
       const y = val(b);
       return (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
     });
-  }, [result, sort, conditions, sectors]);
+  }, [result, sort, conditions, pickedSectors, pickedStages, q]);
 
   const header = (key: SortKey, label: string, cls = '', title?: string) => {
     const on = sort?.key === key;
-    // Numbers sort high-to-low first; text and "bars ago" low-to-high.
-    const firstDir: 1 | -1 = ['symbol', 'sector'].includes(key) || key.startsWith('hit') ? 1 : -1;
+    // Numbers sort high-to-low first; text, stage and "bars ago" low-to-high.
+    const firstDir: 1 | -1 = ['symbol', 'sector', 'stage'].includes(key) || key.startsWith('hit') ? 1 : -1;
     return (
       <th key={key} className={cls} aria-sort={on ? (sort!.dir === 1 ? 'ascending' : 'descending') : 'none'} title={title}>
         <button onClick={() => setSort(on ? (sort!.dir === firstDir ? { key, dir: (-firstDir) as 1 | -1 } : null) : { key, dir: firstDir })}>
@@ -111,7 +136,8 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
 
   if (error) return <div className="card notice error">Couldn't run the scan: {error}</div>;
   if (!result) return loading ? <Skeleton /> : <div className="card notice muted">No data yet.</div>;
-  const narrowed = sectors.length > 0 && rows.length !== result.rows.length;
+  const narrowed = rows.length !== result.rows.length;
+  const elsewhere = q && rows.length === 0 ? allSymbols.filter(matchesQuery).slice(0, 6) : [];
 
   return (
     <section className={`card results ${loading ? 'stale' : ''}`} aria-label="Matching companies">
@@ -120,7 +146,11 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
           <h2 className="results-count">
             {rows.length} {rows.length === 1 ? 'company' : 'companies'}
             <span className="muted">
-              {narrowed ? ` match in the chosen sectors (${result.rows.length} in all)` : ` match, out of ${result.scanned} checked`}
+              {narrowed
+                ? ` shown of ${result.rows.length} ${conditions.length ? 'matches' : 'listed'}`
+                : conditions.length
+                  ? ` match, out of ${result.scanned} checked`
+                  : ' listed'}
             </span>
           </h2>
           {conditions.length > 0 && (
@@ -128,22 +158,54 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
               {conditions.map((c, i) => (
                 <span key={i} className="cond-chip">
                   {conditions.length > 1 && <b>C{i + 1}</b>} {conditionLabel(c)}
-                  {isCross(c.op) && <span className="muted"> · within {c.within ?? 1} {(c.within ?? 1) === 1 ? 'day' : 'days'}</span>}
+                  {hasWhen(c.op) && <span className="muted"> · within {c.within ?? 1} {(c.within ?? 1) === 1 ? 'day' : 'days'}</span>}
                 </span>
               ))}
             </div>
           )}
         </div>
         <div className="spacer" />
+        <input
+          className="search"
+          type="search"
+          placeholder="Search symbol or name"
+          aria-label="Search these results by symbol or company name"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
         <button className="btn" disabled={!rows.length} onClick={() => downloadCsv(rows, conditions, result.asOf)}>
           ⤓ Export CSV
         </button>
       </div>
+      {all.length > 1 && (
+        <div className="sector-chips" role="group" aria-label="Filter by Weinstein stage">
+          <span className="filters-label" title={STAGE_HELP}>
+            Stage <span className="info" aria-hidden>ⓘ</span>
+          </span>
+          <button className={`chip ${stages.length === 0 ? 'on' : ''}`} aria-pressed={stages.length === 0} onClick={() => onStagesChange([])}>
+            All
+          </button>
+          {STAGES.map((s) => {
+            const on = stages.includes(s);
+            return (
+              <button
+                key={s}
+                className={`chip stage-chip s${s} ${on ? 'on' : ''}`}
+                aria-pressed={on}
+                title={STAGE_HELP}
+                onClick={() => onStagesChange(on ? stages.filter((x) => x !== s) : [...stages, s].sort())}
+              >
+                {s} · {STAGE_NAMES[s]} <span className="chip-count">{stageCounts.get(s) ?? 0}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {sectorCounts.length > 1 && (
-        <div className="sector-chips" role="group" aria-label="Filter matches by sector">
+        <div className="sector-chips" role="group" aria-label="Filter by sector">
           <span className="filters-label">Sector</span>
           <button className={`chip ${sectors.length === 0 ? 'on' : ''}`} aria-pressed={sectors.length === 0} onClick={() => onSectorsChange([])}>
-            All <span className="chip-count">{result.rows.length}</span>
+            All
           </button>
           {sectorCounts.map(([name, count]) => {
             const on = sectors.includes(name);
@@ -162,9 +224,30 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
         </div>
       )}
       {rows.length === 0 ? (
-        <p className="muted notice">
-          {result.rows.length > 0 ? 'No matches in the chosen sectors.' : `No company meets ${conditions.length > 1 ? 'these conditions' : 'this condition'} right now.`}
-        </p>
+        <div className="muted notice">
+          {q ? (
+            <>
+              Nothing here matches “{query.trim()}”.
+              {elsewhere.length > 0 && (
+                <span className="elsewhere">
+                  {' '}
+                  Open a chart instead:{' '}
+                  {elsewhere.map((s) => (
+                    <button key={s.symbol} className="chip" title={s.name} onClick={() => onSelect(s.symbol, [])}>
+                      {s.symbol}
+                    </button>
+                  ))}
+                </span>
+              )}
+            </>
+          ) : result.rows.length > 0 ? (
+            'No matches with the chosen stage and sector.'
+          ) : conditions.length ? (
+            `No company meets ${conditions.length > 1 ? 'these conditions' : 'this condition'} right now.`
+          ) : (
+            'No company passes these filters right now.'
+          )}
+        </div>
       ) : (
         <div className="table-scroll">
           <table>
@@ -177,8 +260,10 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
                   3 months
                 </th>
                 {conditions.map((c, i) => header(`hit${i}`, conditions.length > 1 ? `C${i + 1}` : 'Signal', 'hit-col', conditionLabel(c)))}
+                {header('rs', 'RS', 'hide-sm', 'Relative strength rating, 1–99: how the last 12 months rank against every other company share')}
+                {header('stage', 'Stage', 'hide-sm', STAGE_HELP)}
+                {header('tt', 'Trend', 'hide-sm', "Mark Minervini's trend template: how many of its 8 rules the stock meets")}
                 {header('sector', 'Sector', 'left hide-sm')}
-                {header('volume', 'Volume', 'hide-sm')}
                 {header('avgTurnover', 'Avg turnover', 'hide-sm', 'Average daily turnover, last 20 sessions (NPR)')}
               </tr>
             </thead>
@@ -212,8 +297,16 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
                       {r.hits[i] && <HitCell hit={r.hits[i]} cond={c} />}
                     </td>
                   ))}
+                  <td className="hide-sm">
+                    <RsBadge rs={r.rs} />
+                  </td>
+                  <td className="hide-sm">
+                    <StageBadge stage={r.stage} weeks={r.stageWeeks} />
+                  </td>
+                  <td className="hide-sm">
+                    <TrendTemplateBadge tt={r.tt} checks={r.ttChecks} />
+                  </td>
                   <td className="left hide-sm muted">{r.sector}</td>
-                  <td className="mono hide-sm">{fmt.int(r.volume)}</td>
                   <td className="mono hide-sm">{fmt.npr(r.avgTurnover)}</td>
                 </tr>
               ))}
@@ -230,7 +323,22 @@ function downloadCsv(rows: ScreenRow[], conditions: Condition[], asOf: string | 
     const s = v == null ? '' : String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const head = ['Symbol', 'Company', 'Sector', 'Date', 'Close', 'Change %', 'Volume', 'Avg turnover 20D', ...conditions.map(conditionLabel)];
+  const head = [
+    'Symbol',
+    'Company',
+    'Sector',
+    'Date',
+    'Close',
+    'Change %',
+    'Volume',
+    'Avg turnover 20D',
+    'RS rating',
+    'Stage',
+    'Weeks in stage',
+    'Trend template (of 8)',
+    '% below 52W high',
+    ...conditions.map(conditionLabel),
+  ];
   const lines = rows.map((r) => [
     r.symbol,
     r.name,
@@ -240,7 +348,12 @@ function downloadCsv(rows: ScreenRow[], conditions: Condition[], asOf: string | 
     r.changePct?.toFixed(2),
     r.volume,
     r.avgTurnover,
-    ...r.hits.map((h, i) => (!h.pass ? '' : isCross(conditions[i].op) ? `${h.date} (${fmt.ago(h.barsAgo)})` : `${h.left ?? ''}`)),
+    r.rs,
+    r.stage,
+    r.stage ? r.stageWeeks : '',
+    r.tt,
+    r.fromHigh?.toFixed(1),
+    ...r.hits.map((h, i) => (!h.pass ? '' : hasWhen(conditions[i].op) ? `${h.date} (${fmt.ago(h.barsAgo)})` : `${h.left ?? ''}`)),
   ]);
   const csv = [head, ...lines].map((l) => l.map(esc).join(',')).join('\n');
   const a = document.createElement('a');

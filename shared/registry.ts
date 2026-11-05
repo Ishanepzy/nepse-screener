@@ -19,8 +19,12 @@ export interface IndicatorDef {
   /** Short name used in operand labels, e.g. "EMA". */
   short: string;
   params: ParamDef[];
-  /** Output lines; the first is the default. Single-line indicators use `value`. */
-  lines: { key: string; label: string }[];
+  /**
+   * Output lines; the first is the default. Single-line indicators use `value`.
+   * `event` lines are 0/1 flags (1 = it happened on that bar); conditions test them with "happened", and the
+   * chart shows them as markers rather than lines.
+   */
+  lines: { key: string; label: string; event?: boolean }[];
   /** Where the chart draws it: on the candles, on the volume histogram, or in its own oscillator pane. */
   pane: 'price' | 'volume' | 'osc';
   compute: (b: Bars, p: number[]) => Record<string, ta.Series>;
@@ -93,6 +97,23 @@ export const INDICATORS: IndicatorDef[] = [
     pane: 'price',
     compute: (b, [n]) => one(ta.priorLowest(b.l, n)),
   },
+  {
+    id: 'breakout',
+    label: 'Breakout',
+    short: 'Breakout',
+    params: [period(21, 'Days')],
+    lines: [
+      { key: 'level', label: 'Level' },
+      { key: 'start', label: 'Breakout', event: true },
+      { key: 'signal', label: 'Follow-through', event: true },
+      { key: 'state', label: 'Holding', event: true },
+    ],
+    pane: 'price',
+    compute: (b, [n]) => {
+      const r = ta.breakout(b.h, b.c, n);
+      return { level: r.level, start: r.start, signal: r.signal, state: r.state, base: r.base };
+    },
+  },
   { id: 'volume', label: 'Volume', short: 'Volume', params: [], lines: VALUE, pane: 'volume', compute: (b) => one(b.v) },
   {
     id: 'volsma',
@@ -163,6 +184,9 @@ export const INDICATORS: IndicatorDef[] = [
 ];
 
 export const INDICATOR_BY_ID = new Map(INDICATORS.map((d) => [d.id, d]));
+
+/** True when the operand reads one of its indicator's event lines (0/1 flags). */
+export const isEventLine = (op: Operand) => !!INDICATOR_BY_ID.get(op.id)?.lines.find((l) => l.key === (op.line ?? 'value'))?.event;
 
 export function getDef(id: string): IndicatorDef {
   const d = INDICATOR_BY_ID.get(id);

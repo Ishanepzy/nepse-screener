@@ -16,7 +16,11 @@ export function getLine(bars: Bars, op: Operand, cache: SeriesCache): Series {
 }
 
 export const isCross = (op: Condition['op']) => op === 'crossAbove' || op === 'crossBelow';
-export const isUnary = (op: Condition['op']) => op === 'rising' || op === 'falling';
+export const isEvent = (op: Condition['op']) => op === 'fired';
+/** Ops with no right-hand side. */
+export const isUnary = (op: Condition['op']) => op === 'rising' || op === 'falling' || op === 'fired';
+/** Ops whose hit says when it happened (bars ago), rather than a value. */
+export const hasWhen = (op: Condition['op']) => isCross(op) || isEvent(op);
 
 export function normalizeCondition(c: Condition): Condition {
   const factor = Number(c.factor);
@@ -82,12 +86,29 @@ export function evaluate(bars: Bars, c: Condition, cache: SeriesCache): Conditio
     case 'falling':
       hit.pass = forLast((i) => L[i] < L[i - 1]);
       break;
+    case 'fired':
+      for (let k = 0; k < n && last - k >= 0; k++) {
+        if (L[last - k] > 0) {
+          hit.barsAgo = k;
+          hit.date = bars.t[last - k];
+          break;
+        }
+      }
+      hit.pass = hit.barsAgo !== undefined;
+      break;
   }
   return hit;
 }
 
-/** Every bar index where a cross condition fired, oldest first (for chart markers). */
+/** Every bar index where a cross condition fired, or an event started, oldest first (for chart markers). */
 export function crossIndices(bars: Bars, c: Condition, cache: SeriesCache): number[] {
+  if (isEvent(c.op)) {
+    // Rising edges, so a multi-bar state (e.g. "holding a breakout") marks only where it began.
+    const L = getLine(bars, c.left, cache);
+    const out: number[] = [];
+    for (let i = 0; i < L.length; i++) if (L[i] > 0 && !(i > 0 && L[i - 1] > 0)) out.push(i);
+    return out;
+  }
   if (!isCross(c.op)) return [];
   const L = getLine(bars, c.left, cache);
   const Rs = getLine(bars, c.right, cache);

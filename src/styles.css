@@ -615,7 +615,9 @@ input.num {
 .operand {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
+  max-width: 100%;
 }
 .operand select {
   max-width: 190px;
@@ -1511,4 +1513,535 @@ td.price {
 
 .chart-page.focus .cp-head {
   display: none;
+}
+
+/* ---------- pages: navigation, live badge ---------- */
+
+.brand {
+  color: inherit;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-left: 10px;
+}
+.tabs a {
+  padding: 7px 13px;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  text-decoration: none;
+  font-weight: 550;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+.tabs a:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.tabs a.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--up-soft);
+  color: var(--up);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.live-badge i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-badge i {
+    animation: none;
+  }
+}
+.mkt-totals {
+  display: flex;
+  gap: 8px 26px;
+  flex-wrap: wrap;
+  margin: 0;
+  width: 100%;
+  padding-top: 14px;
+  border-top: 1px solid var(--grid);
+}
+.mkt-totals dt {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.mkt-totals dd {
+  margin: 0;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.warn {
+  color: var(--neutral);
+}
+.notice.warn {
+  padding: 8px 0 0;
+}
+.info {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+/* ---------- stage, RS, trend template read-outs ---------- */
+
+.stage {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 46px;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--stage);
+  background: color-mix(in srgb, var(--stage) 12%, transparent);
+}
+.stage-wk {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  opacity: 0.85;
+}
+.s1 {
+  --stage: var(--accent);
+}
+.s2 {
+  --stage: var(--up);
+}
+.s3 {
+  --stage: var(--neutral);
+}
+.s4 {
+  --stage: var(--down);
+}
+.rs {
+  display: inline-block;
+  min-width: 34px;
+  text-align: center;
+  padding: 1px 7px;
+  border-radius: 7px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: var(--surface-2);
+}
+.rs.mid {
+  color: var(--text-2);
+}
+.rs.hi {
+  color: var(--up);
+  background: var(--up-soft);
+}
+.tt {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.tt.near {
+  color: var(--text-2);
+}
+.tt.pass {
+  color: var(--up);
+  font-weight: 700;
+}
+.search {
+  width: 220px;
+}
+.stage-chip.on {
+  color: var(--stage);
+  background: color-mix(in srgb, var(--stage) 12%, transparent);
+  border-color: color-mix(in srgb, var(--stage) 40%, transparent);
+}
+.elsewhere .chip {
+  margin: 0 4px 4px 0;
+}
+.cp-badges {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.cp-badge {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* ---------- leaders ---------- */
+
+.page-intro {
+  padding: 20px 24px;
+}
+.page-intro-head {
+  display: flex;
+  gap: 12px 24px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.page-intro p {
+  margin: 6px 0 0;
+  max-width: 760px;
+}
+.stage-mix {
+  margin-top: 18px;
+}
+.stage-mix-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.stage-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 7px;
+  overflow: hidden;
+  gap: 2px;
+}
+.stage-bar span {
+  background: var(--stage);
+  min-width: 2px;
+}
+.stage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin-top: 10px;
+  font-size: var(--fs-sm);
+}
+.dot.s1,
+.dot.s2,
+.dot.s3,
+.dot.s4 {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--stage);
+  margin-right: 2px;
+}
+.results-head p {
+  margin: 4px 0 0;
+}
+tbody tr.static {
+  cursor: default;
+}
+tbody tr.static:hover {
+  background: transparent;
+}
+.rs-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.rs-track {
+  display: block;
+  width: 72px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.rs-track i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.rs-meter b {
+  min-width: 22px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.sector-table td.left:first-child {
+  min-width: 170px;
+}
+.sym-chips {
+  display: inline-flex;
+  gap: 6px;
+}
+.sym-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-weight: 650;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.sym-chip:hover {
+  border-color: var(--accent);
+}
+.sym-chip .rs {
+  min-width: 28px;
+  padding: 0 5px;
+  font-size: var(--fs-xs);
+}
+
+/* ---------- forms: calculator and journal ---------- */
+
+.form-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 22px;
+  align-items: center;
+  margin: 16px 0;
+}
+.form-grid .field > span:first-child {
+  color: var(--text-2);
+  font-weight: 550;
+}
+.form-grid .field.wide {
+  flex: 1 1 320px;
+}
+.form-grid .field.wide input {
+  flex: 1;
+}
+.stock-input input {
+  width: 150px;
+  text-transform: uppercase;
+}
+.stock-input input::placeholder {
+  text-transform: none;
+}
+.stop-ideas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+.stop-ideas .chip b {
+  font-weight: 650;
+}
+details.rates {
+  margin-top: 12px;
+}
+details.rates summary,
+details.log summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-weight: 550;
+}
+.rates-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 10px 22px;
+  margin: 10px 0;
+}
+.rates-grid .field {
+  justify-content: space-between;
+}
+.rates-grid .field > span:first-child {
+  flex: 1;
+  font-size: var(--fs-sm);
+}
+
+.calc {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.calc-inputs,
+.calc-result {
+  padding: 20px 24px;
+}
+.calc-inputs .form-grid {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.calc-inputs .field {
+  flex-wrap: wrap;
+}
+.calc .check,
+.journal-options .check {
+  white-space: normal;
+}
+.calc-inputs .field > span:first-child {
+  min-width: 140px;
+}
+.calc-result .notice {
+  padding: 4px 0;
+}
+.calc-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.calc-headline .big {
+  font-size: 40px;
+}
+.calc-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px 20px;
+  margin: 18px 0;
+}
+.calc-stats dt,
+.stat-cards dt {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.calc-stats dd,
+.stat-cards dd {
+  margin: 2px 0 0;
+  font-weight: 650;
+  font-size: var(--fs-lg);
+  font-variant-numeric: tabular-nums;
+}
+.calc-stats dd .muted {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.calc-targets {
+  margin: 4px 0 12px;
+  border-top: 1px solid var(--border);
+}
+.calc-targets th,
+.calc-targets td {
+  padding: 10px 8px;
+}
+.calc-targets th:first-child,
+.calc-targets td:first-child {
+  padding-left: 0;
+}
+.calc-targets th:last-child,
+.calc-targets td:last-child {
+  padding-right: 0;
+}
+
+.journal {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.journal > .card:not(.results):not(.log) {
+  padding: 20px 24px;
+}
+.journal-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+  margin: 18px 0 0;
+}
+.stat-cards > div {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.trade-form .seg button {
+  min-width: 64px;
+}
+.form-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+}
+.journal-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  align-items: center;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.journal-options details.rates {
+  width: 100%;
+  margin-top: 0;
+}
+details.log {
+  padding: 16px 0 0;
+}
+details.log summary {
+  padding: 0 20px 14px;
+}
+.row-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+@media (max-width: 1000px) {
+  .calc {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .topbar {
+    flex-wrap: wrap;
+  }
+  .topbar h1 {
+    font-size: var(--fs-md);
+  }
+  .tabs {
+    order: 3;
+    width: 100%;
+    margin: 2px -4px 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .tabs a {
+    padding: 6px 10px;
+  }
+  .search {
+    width: 100%;
+    order: 3;
+  }
+  .page-intro,
+  .calc-inputs,
+  .calc-result,
+  .journal > .card:not(.results):not(.log) {
+    padding: 16px;
+  }
+  .calc-inputs .field > span:first-child {
+    min-width: 0;
+    width: 100%;
+  }
+  .stat-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .stat-cards dd {
+    font-size: var(--fs-md);
+  }
+  .calc-headline .big {
+    font-size: 32px;
+  }
 }

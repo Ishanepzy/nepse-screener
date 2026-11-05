@@ -45,6 +45,8 @@ export function describeOperand(op: Operand): string {
       return `the ${p[0]}-day ATR`;
     case 'roc':
       return `the ${p[0]}-day % change`;
+    case 'breakout':
+      return `the ${p[0]}-day breakout level (highest high of the previous ${p[0]} days)`;
     default:
       return getDef(op.id).label;
   }
@@ -58,6 +60,17 @@ function scaled(op: Operand, factor: number): string {
 }
 
 const days = (k: number) => (k === 1 ? 'day' : `${k} days`);
+
+/** Sentence start for an event line, e.g. "A 21-day breakout started". */
+function describeEvent(op: Operand): string {
+  const p = op.params?.[0];
+  if (op.id === 'breakout') {
+    if (op.line === 'start') return `The close broke above the previous ${p} days' highest high (a ${p}-day breakout)`;
+    if (op.line === 'signal') return `After a ${p}-day breakout, a close went above the breakout day's high (follow-through)`;
+    if (op.line === 'state') return `The stock was holding a ${p}-day breakout (no close back below the latest level it broke)`;
+  }
+  return `${getDef(op.id).label} ${op.line ?? ''} happened`;
+}
 
 export function describeCondition(c: Condition): string {
   const left = describeOperand(c.left);
@@ -78,5 +91,9 @@ export function describeCondition(c: Condition): string {
     case 'rising':
     case 'falling':
       return k === 1 ? `${cap} ${c.op === 'rising' ? 'rose' : 'fell'} on the latest trading day.` : `${cap} has ${c.op === 'rising' ? 'risen' : 'fallen'} ${k} days in a row.`;
+    case 'fired': {
+      const when = k === 1 ? 'on the latest trading day' : `in the last ${k} trading days`;
+      return `${describeEvent(c.left)} ${when}.`;
+    }
   }
 }

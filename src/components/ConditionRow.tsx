@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Condition, Op } from '../../shared/types.ts';
-import { isCross, isUnary } from '../../shared/screener.ts';
+import { hasWhen, isCross, isUnary } from '../../shared/screener.ts';
+import { isEventLine } from '../../shared/registry.ts';
 import { OperandPicker } from './OperandPicker.tsx';
 import { NumInput } from './NumInput.tsx';
 import { describeCondition } from '../describe.ts';
@@ -13,6 +14,8 @@ const OPS: { value: Op; label: string }[] = [
   { value: 'rising', label: 'is rising' },
   { value: 'falling', label: 'is falling' },
 ];
+/** Event lines (e.g. a breakout's follow-through) are on or off, so the only question is whether they happened. */
+const EVENT_OPS: { value: Op; label: string }[] = [{ value: 'fired', label: 'happened' }];
 
 const MULTIPLY_HELP = 'Compare against a multiple of the right side, e.g. "Volume is above 2 times Avg Volume" or "Close is above 0.95 times Highest high".';
 
@@ -25,8 +28,17 @@ interface Props {
 
 export function ConditionRow({ index, cond, onChange, onRemove }: Props) {
   const cross = isCross(cond.op);
+  const when = hasWhen(cond.op);
   const unary = isUnary(cond.op);
-  const set = (patch: Partial<Condition>) => onChange({ ...cond, ...patch });
+  const event = isEventLine(cond.left);
+  const set = (patch: Partial<Condition>) => {
+    const next = { ...cond, ...patch };
+    // Keep the comparison valid for the left side: events only "happen", values never do.
+    const ev = isEventLine(next.left);
+    if (ev && next.op !== 'fired') next.op = 'fired';
+    if (!ev && next.op === 'fired') next.op = 'above';
+    onChange(next);
+  };
   const factor = cond.factor ?? 1;
   const within = cond.within ?? 1;
   const [multiplying, setMultiplying] = useState(factor !== 1);
@@ -41,7 +53,7 @@ export function ConditionRow({ index, cond, onChange, onRemove }: Props) {
         <div className="cond-body">
           <OperandPicker label={`Condition ${index + 1}: what to check`} value={cond.left} onChange={(left) => set({ left })} />
           <select aria-label="Comparison" className="op" value={cond.op} onChange={(e) => set({ op: e.target.value as Op })}>
-            {OPS.map((o) => (
+            {(event ? EVENT_OPS : OPS).map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -76,9 +88,16 @@ export function ConditionRow({ index, cond, onChange, onRemove }: Props) {
             </>
           )}
           <span className="within">
-            <span className="param-word">{cross ? 'within the last' : 'for'}</span>
-            <NumInput value={within} min={1} max={250} width="3ch" title={cross ? 'How many trading days back to look for the cross' : 'How many trading days in a row'} onChange={(v) => set({ within: v })} />
-            <span className="param-word">{cross ? (within === 1 ? 'trading day' : 'trading days') : within === 1 ? 'day' : 'days in a row'}</span>
+            <span className="param-word">{when ? 'within the last' : 'for'}</span>
+            <NumInput
+              value={within}
+              min={1}
+              max={250}
+              width="3ch"
+              title={when ? `How many trading days back to look for the ${cross ? 'cross' : 'event'}` : 'How many trading days in a row'}
+              onChange={(v) => set({ within: v })}
+            />
+            <span className="param-word">{when ? (within === 1 ? 'trading day' : 'trading days') : within === 1 ? 'day' : 'days in a row'}</span>
           </span>
           {cross && (
             <label className="check" title="Leave out stocks where the cross has already reversed">

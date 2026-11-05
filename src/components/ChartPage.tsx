@@ -33,6 +33,7 @@ import {
   type ChartIndicator,
 } from '../chart/indicators.ts';
 import { IndicatorMenu } from './IndicatorMenu.tsx';
+import { RsBadge, StageBadge, TrendTemplateBadge } from './Badges.tsx';
 
 // Colour-blind-safe categorical order (validated per surface); an indicator keeps its slot for life.
 const PALETTE = {
@@ -49,8 +50,12 @@ interface Props {
   theme: 'light' | 'dark';
   /** The results list this chart was opened from, for previous / next. */
   list: string[];
+  /** Changes when live prices arrive; the chart reloads its bars in place. */
+  version: number;
   onNavigate: (symbol: string) => void;
   onClose: () => void;
+  /** Opens the position-size calculator for this stock. */
+  onSizePosition: (symbol: string) => void;
 }
 
 interface Parts {
@@ -82,7 +87,7 @@ const writeFlag = (key: string, v: boolean) => {
   }
 };
 
-export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose }: Props) {
+export function ChartPage({ symbol, conditions, theme, list, version, onNavigate, onClose, onSizePosition }: Props) {
   const [data, setData] = useState<ChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<Range>('1Y');
@@ -102,6 +107,8 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
   const liveParts = useRef<Parts | null>(null);
   const rangeRef = useRef(range);
   rangeRef.current = range;
+  const dataRef = useRef(data);
+  dataRef.current = data;
   const condKey = JSON.stringify(conditions);
 
   // Indicators: the saved list plus whatever the scan uses. Scan-added ones aren't saved, so they don't pile up.
@@ -122,7 +129,8 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
     setShowVolumeState(v);
     writeFlag(VOLUME_KEY, v);
   };
-  const colorOf = (ind: ChartIndicator, k = 0) => PALETTE[theme][(ind.slot + k) % 8];
+  // Breakout draws itself grey / green, so its swatch is the green it turns.
+  const colorOf = (ind: ChartIndicator, k = 0) => (ind.id === 'breakout' ? 'var(--up)' : PALETTE[theme][(ind.slot + k) % 8]);
 
   useEffect(() => {
     let off = false;
@@ -138,7 +146,7 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
     return () => {
       off = true;
     };
-  }, [symbol, condKey]);
+  }, [symbol, condKey, version]);
 
   // Drawings belong to the stock whose bars are on screen.
   const shownSymbol = data?.symbol;
@@ -194,7 +202,9 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
   });
 
   // ---- the chart: candles, volume and signal markers; rebuilt per stock and theme ----
+  const shown = data?.symbol;
   useEffect(() => {
+    const data = dataRef.current;
     if (!data || !box.current) return;
     const css = getComputedStyle(document.documentElement);
     const v = (name: string) => css.getPropertyValue(name).trim();
@@ -215,20 +225,20 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
       timeScale: { borderColor: v('--border'), rightOffset: 6 },
       crosshair: { mode: CrosshairMode.Normal },
     });
-    const { bars } = data;
     const candles = chart.addSeries(CandlestickSeries, { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false });
-    candles.setData(bars.t.map((t, i) => ({ time: t, open: bars.o[i], high: bars.h[i], low: bars.l[i], close: bars.c[i] })));
+    setBars(candles, null, data.bars);
     candles.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 } });
     const volume = chart.addSeries(HistogramSeries, { priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
-    volume.setData(bars.t.map((t, i) => ({ time: t, value: bars.v[i], color: (bars.c[i] >= bars.o[i] ? up : down) + '55' })));
+    setBars(null, volume, data.bars);
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     const markers = createSeriesMarkers(candles, []);
     chart.subscribeCrosshairMove((p) => {
       const i = p.logical == null ? null : Math.round(p.logical);
-      setHover(i != null && i >= 0 && i < bars.t.length ? i : null);
+      const n = dataRef.current?.bars.t.length ?? 0;
+      setHover(i != null && i >= 0 && i < n ? i : null);
     });
     chart.subscribeClick(() => setSelected(null));
-    applyRange(chart, bars.t.length, rangeRef.current);
+    applyRange(chart, data.bars.t.length, rangeRef.current);
     const next = { chart, candles, volume, markers };
     liveParts.current = next;
     setParts(next);
@@ -238,9 +248,14 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
       setParts(null);
       chart.remove();
     };
-  }, [data, theme]);
+  }, [shown, theme]);
 
   const isLive = (p: Parts | null): p is Parts => !!p && p === liveParts.current;
+
+  // New bars for the same stock (live prices): update in place, keeping the zoom.
+  useEffect(() => {
+    if (isLive(parts) && data && data.symbol === shown) setBars(parts.candles, parts.volume, data.bars);
+  }, [parts, data]);
 
   useEffect(() => {
     if (isLive(parts) && data) applyRange(parts.chart, data.bars.t.length, range);
@@ -250,9 +265,17 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
     if (isLive(parts)) parts.volume.applyOptions({ visible: showVolume });
   }, [parts, showVolume]);
 
+  // ---- indicators: torn down and re-added whenever the list changes (the zoom is kept) ----
+  const computed = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof computeIndicator>>();
+    if (data) for (const ind of indicators) m.set(ind.uid, computeIndicator(data.bars, ind));
+    return m;
+  }, [data, indicators]);
+
   useEffect(() => {
     if (!isLive(parts) || !data) return;
     const css = getComputedStyle(document.documentElement);
+    const up = css.getPropertyValue('--up').trim();
     const list: SeriesMarker<Time>[] = showSignals
       ? data.markers.map((m) => ({
           time: m.date,
@@ -262,15 +285,15 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
           text: m.text,
         }))
       : [];
+    // Breakout indicators mark their follow-through signals ("B"), whatever the scan is.
+    for (const ind of indicators) {
+      if (ind.id !== 'breakout') continue;
+      const signal = computed.get(ind.uid)?.signal ?? [];
+      signal.forEach((s, i) => s > 0 && list.push({ time: data.bars.t[i], position: 'belowBar', color: up, shape: 'arrowUp', text: 'B' }));
+    }
+    list.sort((a, b) => (String(a.time) < String(b.time) ? -1 : String(a.time) > String(b.time) ? 1 : 0));
     parts.markers.setMarkers(list);
-  }, [parts, data, showSignals]);
-
-  // ---- indicators: torn down and re-added whenever the list changes (the zoom is kept) ----
-  const computed = useMemo(() => {
-    const m = new Map<string, ReturnType<typeof computeIndicator>>();
-    if (data) for (const ind of indicators) m.set(ind.uid, computeIndicator(data.bars, ind));
-    return m;
-  }, [data, indicators]);
+  }, [parts, data, showSignals, computed]);
   useEffect(() => {
     if (!isLive(parts) || !data) return;
     const { chart } = parts;
@@ -292,13 +315,15 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
       const scale = def.pane === 'volume' ? { priceScaleId: 'vol' } : {};
       let first: ISeriesApi<SeriesType> | null = null;
       def.lines.forEach((ln, k) => {
+        if (ln.event) return; // drawn as markers or colour, not as a line
         const vals = lines[ln.key];
         let s: ISeriesApi<SeriesType>;
         if (ln.key === 'hist') {
           s = chart.addSeries(HistogramSeries, { ...scale, priceLineVisible: false, lastValueVisible: false }, pane);
           s.setData(bars.t.map((time, i) => (Number.isFinite(vals[i]) ? { time, value: vals[i], color: (vals[i] >= 0 ? up : down) + '88' } : { time })));
         } else {
-          const color = ind.id === 'adx' && ln.key !== 'adx' ? (ln.key === 'pdi' ? up : down) : colorOf(ind, ind.id === 'bb' ? 0 : k);
+          const color =
+            ind.id === 'breakout' ? up : ind.id === 'adx' && ln.key !== 'adx' ? (ln.key === 'pdi' ? up : down) : colorOf(ind, ind.id === 'bb' ? 0 : k);
           s = chart.addSeries(
             LineSeries,
             {
@@ -306,7 +331,7 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
               color,
               lineWidth: ind.id === 'bb' ? 1 : 2,
               lineStyle: ind.id === 'bb' && ln.key === 'middle' ? LineStyle.Dashed : LineStyle.Solid,
-              lineType: ind.id === 'hh' || ind.id === 'll' ? LineType.WithSteps : LineType.Simple,
+              lineType: ind.id === 'hh' || ind.id === 'll' || ind.id === 'breakout' ? LineType.WithSteps : LineType.Simple,
               priceLineVisible: false,
               lastValueVisible: true,
               crosshairMarkerRadius: 3,
@@ -318,7 +343,10 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
               const val = vals[i];
               if (!Number.isFinite(val)) return { time };
               // Supertrend reads as support (green, under price) or resistance (red, over price).
-              return ind.id === 'supertrend' ? { time, value: val, color: bars.c[i] >= val ? up : down } : { time, value: val };
+              if (ind.id === 'supertrend') return { time, value: val, color: bars.c[i] >= val ? up : down };
+              // A breakout's level is grey, and green from a breakout until a close falls back below the level it broke.
+              if (ind.id === 'breakout') return { time, value: val, color: lines.state[i] > 0 ? up : v('--muted') };
+              return { time, value: val };
             }),
           );
         }
@@ -379,6 +407,19 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
             <span className="muted small hide-sm">{b.t[n - 1]}</span>
           </div>
         )}
+        {data?.profile && data.symbol === symbol && (
+          <div className="cp-badges hide-sm" aria-label="Strength">
+            <span className="cp-badge">
+              RS <RsBadge rs={data.profile.rs} />
+            </span>
+            <span className="cp-badge">
+              Stage <StageBadge stage={data.profile.stage} weeks={data.profile.stageWeeks} />
+            </span>
+            <span className="cp-badge">
+              Trend <TrendTemplateBadge tt={data.profile.tt} checks={data.profile.ttChecks} />
+            </span>
+          </div>
+        )}
         <div className="spacer" />
         {idx >= 0 && list.length > 1 && (
           <div className="cp-nav" title="Step through your results (← → keys)">
@@ -412,6 +453,9 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
           </label>
         )}
         <div className="spacer" />
+        <button className="btn" onClick={() => onSizePosition(symbol)} title="How many shares to buy for the risk you choose">
+          Position size
+        </button>
         <a className="btn ghost hide-sm" href={`https://merolagani.com/CompanyDetail.aspx?symbol=${encodeURIComponent(symbol)}`} target="_blank" rel="noreferrer">
           merolagani ↗
         </a>
@@ -485,11 +529,18 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
                     <i className="swatch" style={{ background: colorOf(ind) }} aria-hidden />
                     <span>{indicatorLabel(ind)}</span>
                     {lines &&
-                      def.lines.map((ln) => (
-                        <b key={ln.key} title={ln.label}>
-                          {fmt.value(Number.isFinite(lines[ln.key][i]) ? lines[ln.key][i] : null)}
-                        </b>
-                      ))}
+                      def.lines
+                        .filter((ln) => !ln.event)
+                        .map((ln) => (
+                          <b key={ln.key} title={ln.label}>
+                            {fmt.value(Number.isFinite(lines[ln.key][i]) ? lines[ln.key][i] : null)}
+                          </b>
+                        ))}
+                    {lines && ind.id === 'breakout' && (
+                      <span className={lines.state[i] > 0 ? 'up' : 'muted'} title="Holding = closed above the level and hasn't closed back below the level it broke">
+                        {lines.state[i] > 0 ? `holding above ${fmt.price(lines.base[i])}` : 'no breakout'}
+                      </span>
+                    )}
                     <button className="lg-remove" aria-label={`Remove ${indicatorLabel(ind)}`} title="Remove from chart" onClick={() => setIndicators(indicators.filter((x) => x.uid !== ind.uid))}>
                       ×
                     </button>
@@ -508,6 +559,17 @@ export function ChartPage({ symbol, conditions, theme, list, onNavigate, onClose
       </div>
     </div>
   );
+}
+
+/** Candles and/or volume from the bars (either series may be skipped). */
+function setBars(candles: ISeriesApi<'Candlestick'> | null, volume: ISeriesApi<'Histogram'> | null, bars: ChartResponse['bars']) {
+  if (candles) candles.setData(bars.t.map((t, i) => ({ time: t, open: bars.o[i], high: bars.h[i], low: bars.l[i], close: bars.c[i] })));
+  if (volume) {
+    const css = getComputedStyle(document.documentElement);
+    const up = css.getPropertyValue('--up').trim();
+    const down = css.getPropertyValue('--down').trim();
+    volume.setData(bars.t.map((t, i) => ({ time: t, value: bars.v[i], color: (bars.c[i] >= bars.o[i] ? up : down) + '55' })));
+  }
 }
 
 function SymbolSearch({ onPick }: { onPick: (symbol: string) => void }) {

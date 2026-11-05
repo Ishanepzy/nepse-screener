@@ -4,6 +4,14 @@ import type { SavedScan, Scan } from '../scan.ts';
 import { ConditionRow } from './ConditionRow.tsx';
 import { defaultOperand } from './OperandPicker.tsx';
 
+const RS_OPTIONS = [
+  { label: 'Any', value: 0 },
+  { label: '50 or more', value: 50 },
+  { label: '70 or more', value: 70 },
+  { label: '80 or more', value: 80 },
+  { label: '90 or more', value: 90 },
+];
+
 const TURNOVER_OPTIONS = [
   { label: 'Any amount', value: 0 },
   { label: 'At least Rs 10 lakh', value: 1e6 },
@@ -58,7 +66,9 @@ export function ScanBuilder({ scan, onChange, saved, onSave, onLoadSaved, onDele
             onRemove={() => setConditions(scan.conditions.filter((_, j) => j !== i))}
           />
         ))}
-        {scan.conditions.length === 0 && <p className="muted empty-conds">No conditions yet. Pick a quick scan above, or add your own.</p>}
+        {scan.conditions.length === 0 && (
+          <p className="muted empty-conds">No conditions, so every stock that passes the filters below is listed. Pick a quick scan above, or add your own.</p>
+        )}
         <button className="btn add" onClick={addCondition} disabled={scan.conditions.length >= 12}>
           + Add condition
         </button>
@@ -76,6 +86,23 @@ export function ScanBuilder({ scan, onChange, saved, onSave, onLoadSaved, onDele
           <span>to</span>
           <OptionalNumber value={u.maxPrice} label="Highest price" onChange={(v) => setUniverse({ maxPrice: v })} />
         </span>
+        <label
+          className="check"
+          title="Mark Minervini's 8 rules: price above a rising 200-day average, 50 > 150 > 200-day averages, at least 30% above the 52-week low, within 25% of the 52-week high, RS rating 70+"
+        >
+          <input type="checkbox" checked={!!u.trendTemplate} onChange={(e) => setUniverse({ trendTemplate: e.target.checked || undefined })} />
+          Meets the trend template
+        </label>
+        <label className="field" title="Relative strength rating: how the stock's last 12 months (the latest 3 counted double) rank against every other company share. 99 = stronger than 99% of them.">
+          <span>RS rating</span>
+          <select value={u.minRs ?? 0} onChange={(e) => setUniverse({ minRs: Number(e.target.value) || undefined })}>
+            {RS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="field" title="Average value traded per day over the last 20 trading days. Use it to skip thinly traded stocks.">
           <span>Daily turnover</span>
           <select value={u.minTurnover ?? 0} onChange={(e) => setUniverse({ minTurnover: Number(e.target.value) || undefined })}>
