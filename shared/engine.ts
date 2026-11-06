@@ -100,6 +100,20 @@ export class Engine {
 
   constructor(ds: Dataset) {
     this.ds = ds;
+    for (const b of ds.bars.values()) b.ix = this.indexCloses(b.t);
+  }
+
+  /** The NEPSE index close on or before each date (NaN before the index history starts). */
+  private indexCloses(dates: string[]): number[] {
+    const ix = this.ds.index;
+    if (!ix?.t.length) return dates.map(() => NaN);
+    const out: number[] = [];
+    let j = 0;
+    for (const d of dates) {
+      while (j < ix.t.length && ix.t[j] <= d) j++;
+      out.push(j > 0 ? ix.c[j - 1] : NaN);
+    }
+    return out;
   }
 
   private cache(symbol: string): SeriesCache {
@@ -372,6 +386,7 @@ export class Engine {
         l: [...b.l.slice(0, keep), low],
         c: [...b.c.slice(0, keep), q.close],
         v: [...b.v.slice(0, keep), q.volume],
+        ix: [...(b.ix ?? this.indexCloses(b.t)).slice(0, keep), ...this.indexCloses([date])],
       });
       this.caches.delete(q.symbol);
       changed++;

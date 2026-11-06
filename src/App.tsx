@@ -18,7 +18,7 @@ import {
   type SavedScan,
   type Scan,
 } from './scan.ts';
-import { LIVE_POLL_MS, fetchLive, marketMayBeOpen, type LiveSnapshot } from './live.ts';
+import { LIVE_POLL_MS, fetchLive, marketMayBeOpen, nepalNow, type LiveSnapshot } from './live.ts';
 import { PresetStrip } from './components/PresetStrip.tsx';
 import { ScanBuilder } from './components/ScanBuilder.tsx';
 import { ResultsTable } from './components/ResultsTable.tsx';
@@ -197,7 +197,12 @@ export function App() {
     setScanState({ scan: { ...scanFromPreset(id), universe }, preset: id });
   };
 
-  const liveNow = live && live.date === info?.asOf && marketMayBeOpen();
+  // Live only when the feed holds TODAY's session (Nepal date) during market hours. Before the first trades of the day
+  // it still holds yesterday's close, which is not live.
+  const marketHours = marketMayBeOpen();
+  const today = nepalNow().date;
+  const liveNow = !!live && live.date === today && marketHours;
+  const waiting = marketHours && !liveNow;
 
   return (
     <div className="app">
@@ -242,9 +247,13 @@ export function App() {
           ) : (
             <span
               className="muted hide-sm"
-              title={`Prices update automatically every weekday after the market closes.${info?.builtAt ? ` Last download: ${new Date(info.builtAt).toLocaleString()}` : ''}`}
+              title={
+                waiting
+                  ? "Trading hours, but merolagani's feed has no trades for today yet (it opens at 11:00). Checked every 30 seconds."
+                  : `Prices update automatically every weekday after the market closes.${info?.builtAt ? ` Last download: ${new Date(info.builtAt).toLocaleString()}` : ''}`
+              }
             >
-              {info?.asOf ? `Prices as of ${info.asOf}` : 'Loading data…'}
+              {info?.asOf ? (waiting ? `${info.asOf} close · waiting for trades` : `Prices as of ${info.asOf}`) : 'Loading data…'}
             </span>
           )}
           <button

@@ -322,16 +322,28 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
           s = chart.addSeries(HistogramSeries, { ...scale, priceLineVisible: false, lastValueVisible: false }, pane);
           s.setData(bars.t.map((time, i) => (Number.isFinite(vals[i]) ? { time, value: vals[i], color: (vals[i] >= 0 ? up : down) + '88' } : { time })));
         } else {
+          const ratio = ind.id === 'ratio';
           const color =
-            ind.id === 'breakout' ? up : ind.id === 'adx' && ln.key !== 'adx' ? (ln.key === 'pdi' ? up : down) : colorOf(ind, ind.id === 'bb' ? 0 : k);
+            ind.id === 'breakout'
+              ? up
+              : ind.id === 'adx' && ln.key !== 'adx'
+                ? ln.key === 'pdi'
+                  ? up
+                  : down
+                : ratio && ln.key === 'high'
+                  ? v('--muted')
+                  : colorOf(ind, ind.id === 'bb' || ratio ? 0 : k);
           s = chart.addSeries(
             LineSeries,
             {
               ...scale,
               color,
-              lineWidth: ind.id === 'bb' ? 1 : 2,
-              lineStyle: ind.id === 'bb' && ln.key === 'middle' ? LineStyle.Dashed : LineStyle.Solid,
-              lineType: ind.id === 'hh' || ind.id === 'll' || ind.id === 'breakout' ? LineType.WithSteps : LineType.Simple,
+              lineWidth: ind.id === 'bb' || (ratio && ln.key !== 'value') ? 1 : 2,
+              // The ratio's average is dashed and its prior high dotted, in the ratio's own colour / grey.
+              lineStyle: (ind.id === 'bb' && ln.key === 'middle') || (ratio && ln.key === 'ma') ? LineStyle.Dashed : ratio && ln.key === 'high' ? LineStyle.Dotted : LineStyle.Solid,
+              lineType: ind.id === 'hh' || ind.id === 'll' || ind.id === 'breakout' || (ratio && ln.key === 'high') ? LineType.WithSteps : LineType.Simple,
+              // A price ÷ index ratio is around 0.1–1: the axis needs 4 decimals.
+              ...(ratio ? { priceFormat: { type: 'price' as const, precision: 4, minMove: 0.0001 } } : {}),
               priceLineVisible: false,
               lastValueVisible: true,
               crosshairMarkerRadius: 3,

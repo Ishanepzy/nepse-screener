@@ -114,6 +114,23 @@ export const INDICATORS: IndicatorDef[] = [
       return { level: r.level, start: r.start, signal: r.signal, state: r.state, base: r.base };
     },
   },
+  {
+    id: 'ratio',
+    label: 'Ratio (price ÷ NEPSE)',
+    short: 'Price/NEPSE',
+    params: [period(50, 'Average', { before: 'avg', after: 'days' }), period(250, 'High', { before: 'high of', after: 'days' })],
+    lines: [
+      { key: 'value', label: 'Ratio' },
+      { key: 'ma', label: 'Average' },
+      { key: 'high', label: 'Prior high' },
+    ],
+    pane: 'osc',
+    compute: (b, [n, h]) => {
+      // Close divided by the NEPSE index the same day: rising = beating the market, whatever the market does.
+      const value = b.c.map((c, i) => (b.ix && b.ix[i] > 0 ? c / b.ix[i] : NaN));
+      return { value, ma: ta.sma(value, n), high: ta.priorHighest(value, h) };
+    },
+  },
   { id: 'volume', label: 'Volume', short: 'Volume', params: [], lines: VALUE, pane: 'volume', compute: (b) => one(b.v) },
   {
     id: 'volsma',
@@ -213,6 +230,12 @@ export const seriesKey = (op: Operand) => `${op.id}(${op.params.join(',')})`;
 export function operandLabel(op: Operand): string {
   const def = getDef(op.id);
   if (def.id === 'value') return formatNumber(op.params[0]);
+  if (def.id === 'ratio') {
+    const [n, h] = op.params;
+    if (op.line === 'ma') return `Price/NEPSE ${n}D avg`;
+    if (op.line === 'high') return `Price/NEPSE ${h === 250 ? '52W' : `${h}D`} high`;
+    return op.line ? 'Price/NEPSE' : `Price/NEPSE (avg ${n}, high ${h})`;
+  }
   if (def.id === 'hh' || def.id === 'll') {
     const n = op.params[0];
     const span = n === 250 ? '52W' : `${n}D`;

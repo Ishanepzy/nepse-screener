@@ -8,6 +8,11 @@ export interface Bars {
   l: number[];
   c: number[];
   v: number[];
+  /**
+   * NEPSE index close for each date (the latest one carried forward over gaps and live sessions, which have no
+   * index value). Filled in by the engine; the price / NEPSE ratio reads it.
+   */
+  ix?: number[];
 }
 
 /** One input to a condition: an indicator (with its params) and which of its output lines to read. */

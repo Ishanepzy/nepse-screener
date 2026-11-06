@@ -39,6 +39,7 @@ A scan is a list of conditions joined by **All** or **Any**. Each condition comp
 | happened            | an event (e.g. a breakout's follow-through) occurred within the last N bars       |
 
 Either side can be Close/Open/High/Low, EMA, SMA, WMA, Supertrend, Bollinger (upper/middle/lower), Breakout,
+Price ÷ NEPSE (the ratio, its average or its prior high),
 Highest high / Lowest low of the previous N days (so `Close crosses above Highest high 250 days` is a
 52-week breakout), Volume, Avg Volume, RSI, MACD (line/signal/histogram), Stochastic (%K/%D), ADX
 (+DI/-DI), ATR, % change, or a fixed number. **+ multiplier** compares against a multiple of the right side,
@@ -83,6 +84,17 @@ The **Trend template** and **Stage 2 leaders** (Stage 2 with RS 80+) quick scans
 
 In scans: `Breakout · Breakout happened`, `Breakout · Follow-through happened` and `Breakout · Holding happened`,
 used by the **21-day breakout** and **Breakout follow-through** quick scans.
+
+## Price ÷ NEPSE (relative strength line)
+
+The stock's close divided by the NEPSE index close the same day. It rises when the stock beats the market, whether
+the market is going up or down. The indicator draws three lines in its own panel: the ratio, its moving average
+(dashed, 50 days by default) and its highest value of the previous 250 days (dotted). Two quick scans use it:
+**Started beating NEPSE** (ratio crossed above its 50-day average) and **RS line 52-week high** (ratio closed above
+its prior 52-week high, which often happens before the price makes one).
+
+During the session the live feed has no index value, so today's ratio divides by the last index close until the
+day's data file arrives.
 
 ## Leaders page
 

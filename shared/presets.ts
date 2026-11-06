@@ -193,6 +193,23 @@ export const PRESETS: Preset[] = [
     conditions: [cross(close, 'down', o('supertrend', [10, 3]), 3)],
   },
   {
+    id: 'ratio-x-ma50',
+    name: 'Started beating NEPSE',
+    description: 'Price ÷ NEPSE index crossed above its 50-day average in the last 3 sessions: the stock has turned to outperforming the market.',
+    bias: 'bull',
+    match: 'all',
+    conditions: [cross(o('ratio', [50, 250], 'value'), 'up', o('ratio', [50, 250], 'ma'), 3)],
+  },
+  {
+    id: 'ratio-52w-high',
+    name: 'RS line 52-week high',
+    description:
+      'Price ÷ NEPSE index closed above its previous 52-week high in the last 3 sessions. The relative strength line often makes a new high before the price does.',
+    bias: 'bull',
+    match: 'all',
+    conditions: [cross(o('ratio', [50, 250], 'value'), 'up', o('ratio', [50, 250], 'high'), 3)],
+  },
+  {
     id: 'volume-spike',
     name: 'Volume spike',
     description: "Today's volume is more than 2× its 20-day average.",

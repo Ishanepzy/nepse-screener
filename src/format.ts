@@ -23,6 +23,8 @@ export function value(x: number | null | undefined): string {
   const a = Math.abs(x);
   if (a >= 1e5) return npr(x);
   if (a >= 100) return x.toFixed(1);
+  // Small values (a price ÷ index ratio, a MACD histogram) keep up to 4 decimals: 0.2074, but -0.53 not -0.5300.
+  if (a < 1 && a > 0) return x.toFixed(4).replace(/(\.\d{2}\d*?)0+$/, '$1');
   return x.toFixed(2);
 }
 

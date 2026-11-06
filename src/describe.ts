@@ -45,6 +45,12 @@ export function describeOperand(op: Operand): string {
       return `the ${p[0]}-day ATR`;
     case 'roc':
       return `the ${p[0]}-day % change`;
+    case 'ratio': {
+      const what = 'the price ÷ NEPSE index ratio';
+      if (op.line === 'ma') return `the ${p[0]}-day average of ${what}`;
+      if (op.line === 'high') return `the highest ${what} of the previous ${p[1] === 250 ? '52 weeks' : `${p[1]} days`}`;
+      return what;
+    }
     case 'breakout':
       return `the ${p[0]}-day breakout level (highest high of the previous ${p[0]} days)`;
     default:

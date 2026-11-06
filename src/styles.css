@@ -157,6 +157,7 @@ input.num {
   align-items: center;
   gap: 12px;
   font-size: var(--fs-sm);
+  white-space: nowrap;
 }
 
 main {
