@@ -4,6 +4,10 @@ on:
   schedule:
     # NEPSE closes at 15:00 Nepal time (09:15 UTC). The first run picks up the closing prices; the second is a
     # safety net, since GitHub can delay or drop scheduled runs. Off the hour to dodge GitHub's busiest minutes.
+    #
+    # GitHub turns scheduled workflows off after 60 days without a push to the repo. If that happens the site shows
+    # a "prices may be out of date" bar; turn it back on from the Actions tab (Enable workflow) or with
+    # `gh workflow enable deploy.yml`. Any push resets the 60 days.
     - cron: '40 9 * * 1-5'
     - cron: '10 12 * * 1-5'
   push:

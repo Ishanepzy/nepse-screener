@@ -35,6 +35,10 @@ import * as fmt from './format.ts';
 
 type Theme = 'light' | 'dark';
 const THEME_KEY = 'nepse.theme';
+// The Action builds every weekday, so the data file is never more than about 3 days old (Friday evening to Monday
+// evening). Older than this means the daily build has stopped: GitHub switches a schedule off after 60 days
+// without a push.
+const STALE_AFTER_MS = 4 * 86_400_000;
 
 function initialTheme(): Theme {
   const t = load(THEME_KEY);
@@ -211,6 +215,7 @@ export function App() {
 
   const liveNow = session === 'live' && !!live;
   const waiting = session === 'waiting';
+  const stale = !!info?.builtAt && Date.now() - Date.parse(info.builtAt) > STALE_AFTER_MS;
 
   return (
     <div className="app">
@@ -280,6 +285,11 @@ export function App() {
       </header>
 
       <main>
+        {stale && (
+          <div className="card stale-bar" role="status">
+            <b>Prices may be out of date.</b> The daily update last ran {fmt.relTime(info!.builtAt)}.
+          </div>
+        )}
         {page.page === 'screener' && (
           <>
             <MarketBand market={market} live={live && live.date === info?.asOf ? live : null} open={liveNow} />

@@ -98,6 +98,19 @@ this polls.
 Watchlist, journal, saved scans, drawings and settings are kept in the browser (localStorage). The journal has
 backup and restore.
 
+### If prices stop updating
+
+GitHub switches scheduled workflows off after 60 days without a push to the repo, and this build never pushes
+anything. When the data file is more than 4 days old the site shows a "prices may be out of date" bar. To turn
+the schedule back on, open the Actions tab, pick "Build and deploy" and click "Enable workflow", or run:
+
+```bash
+gh workflow enable deploy.yml
+```
+
+Any push resets the 60 days. There are actions that keep a schedule alive automatically, but GitHub has taken
+the best-known one down for breaking its terms of service, so this repo doesn't use one.
+
 ## Layout
 
 ```

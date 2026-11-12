@@ -2088,3 +2088,12 @@ td.old-chg {
   gap: 10px;
   flex-wrap: wrap;
 }
+
+.stale-bar {
+  padding: 12px 18px;
+  border-color: color-mix(in srgb, var(--neutral) 45%, var(--border));
+  background: color-mix(in srgb, var(--neutral) 9%, var(--surface));
+}
+.stale-bar b {
+  color: var(--neutral);
+}
