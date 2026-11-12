@@ -2,11 +2,9 @@ interface Props {
   values: number[];
   width?: number;
   height?: number;
-  /** Shown as the hover title and read by screen readers. */
   label?: string;
 }
 
-/** Tiny close-price line, green if the window ended higher than it started, red if lower. */
 export function Sparkline({ values, width = 104, height = 30, label }: Props) {
   if (values.length < 2) return null;
   const min = Math.min(...values);

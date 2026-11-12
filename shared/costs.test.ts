@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buyCost, commission, sellProceeds, sizePosition } from './costs.ts';
 
-const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-6, `${a} ≉ ${b}`);
+const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
 
 test('commission takes the slab rate on the whole amount', () => {
   near(commission(50_000), 180); // 0.36%
@@ -39,4 +39,19 @@ test('position size is capped by capital and rounded to lots', () => {
   assert.equal(p.shares % 10, 0);
   assert.ok(p.cost <= 50_000);
   assert.equal(sizePosition(100_000, 1_000, 500, 510).shares, 0); // stop above entry
+});
+
+test('the limit reported is the one that actually bit', () => {
+  // fee-free, risk and capital both allow 100 shares; with fees it is the risk that cuts it to 57
+  const tight = sizePosition(100_000, 1_000, 1_000, 990);
+  assert.equal(tight.limit, 'risk');
+  assert.ok(tight.riskAtStop <= 1_000 && tight.cost < 60_000);
+  // capital is spent down to the last share that fits with fees: 996 x 100 + 343.62 fits, 997 doesn't
+  const all = sizePosition(100_000, 1_000_000, 100, 50);
+  assert.equal(all.shares, 996);
+  assert.equal(all.limit, 'capital');
+  // not even one share: still says why
+  assert.deepEqual(sizePosition(400, 1_000, 500, 450), { shares: 0, cost: 0, riskAtStop: 0, limit: 'capital' });
+  assert.equal(sizePosition(300, 3, 549, 500).limit, 'capital'); // the risk is tiny too, but capital is the real answer
+  assert.equal(sizePosition(100_000, 3, 549, 500).limit, 'risk');
 });

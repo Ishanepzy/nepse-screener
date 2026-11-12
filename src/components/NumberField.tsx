@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-/** Free-typing number box; empty reports null. Follows outside changes without rewriting what's being typed. */
+// Like NumInput, but empty is allowed and reported as null.
 export function NumberField({
   value,
   onChange,

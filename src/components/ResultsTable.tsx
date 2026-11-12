@@ -7,8 +7,9 @@ import { api } from '../api.ts';
 import * as fmt from '../format.ts';
 import { Sparkline } from './Sparkline.tsx';
 import { RsBadge, STAGE_HELP, StageBadge, TrendTemplateBadge } from './Badges.tsx';
+import { StarButton } from './StarButton.tsx';
 
-type SortKey = 'symbol' | 'sector' | 'close' | 'changePct' | 'volume' | 'avgTurnover' | 'rs' | 'stage' | 'tt' | `hit${number}`;
+type SortKey = 'symbol' | 'sector' | 'close' | 'change' | 'changePct' | 'volume' | 'avgTurnover' | 'rs' | 'stage' | 'tt' | `hit${number}`;
 
 interface Props {
   result: ScreenResponse | null;
@@ -16,14 +17,14 @@ interface Props {
   loading: boolean;
   error: string | null;
   selected: string | null;
-  /** Opens a stock; `list` is the table's current order, so the chart can step to the next / previous one. */
+  // list = the current table order, so the chart can step prev / next
   onSelect: (symbol: string, list: string[]) => void;
-  /** Sectors picked in the chips above the table (empty = all). */
   sectors: string[];
   onSectorsChange: (sectors: string[]) => void;
-  /** Weinstein stages picked in the chips (empty = all). */
   stages: Stage[];
   onStagesChange: (stages: Stage[]) => void;
+  // wording after the count when there are no conditions
+  listLabel?: string;
 }
 
 const OP_WORDS = { crossAbove: 'crosses above', crossBelow: 'crosses below', above: 'above', below: 'below', rising: 'rising', falling: 'falling', fired: 'happened' };
@@ -74,7 +75,19 @@ function Skeleton() {
   );
 }
 
-export function ResultsTable({ result, conditions, loading, error, selected, onSelect, sectors, onSectorsChange, stages, onStagesChange }: Props) {
+export function ResultsTable({
+  result,
+  conditions,
+  loading,
+  error,
+  selected,
+  onSelect,
+  sectors,
+  onSectorsChange,
+  stages,
+  onStagesChange,
+  listLabel = 'listed',
+}: Props) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null);
   const [query, setQuery] = useState('');
   const [allSymbols, setAllSymbols] = useState<{ symbol: string; name: string }[]>([]);
@@ -85,7 +98,7 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
   const q = query.trim().toLowerCase();
   const matchesQuery = (r: { symbol: string; name: string }) => !q || r.symbol.toLowerCase().includes(q) || r.name.toLowerCase().includes(q);
 
-  // Each chip row counts what the other filters leave, so a chip's number is what picking it shows.
+  // each chip row counts what the other filter leaves, so a chip's number is what picking it will show
   const pickedSectors = useMemo(() => new Set(sectors), [sectors]);
   const pickedStages = useMemo(() => new Set<Stage | null>(stages), [stages]);
   const inSector = (r: ScreenRow) => pickedSectors.size === 0 || pickedSectors.has(r.sector);
@@ -94,8 +107,10 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
   const sectorCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const r of all) if (inStage(r)) m.set(r.sector, (m.get(r.sector) ?? 0) + 1);
+    // a picked sector with no match in this scan still gets its chip, or there'd be no way to unpick it
+    for (const s of sectors) if (!m.has(s)) m.set(s, 0);
     return [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  }, [result, pickedStages]);
+  }, [result, pickedStages, sectors]);
   const stageCounts = useMemo(() => {
     const m = new Map<Stage | null, number>();
     for (const r of all) if (inSector(r)) m.set(r.stage, (m.get(r.stage) ?? 0) + 1);
@@ -122,7 +137,7 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
 
   const header = (key: SortKey, label: string, cls = '', title?: string) => {
     const on = sort?.key === key;
-    // Numbers sort high-to-low first; text, stage and "bars ago" low-to-high.
+    // numbers sort high-to-low first; text, stage and "bars ago" low-to-high
     const firstDir: 1 | -1 = ['symbol', 'sector', 'stage'].includes(key) || key.startsWith('hit') ? 1 : -1;
     return (
       <th key={key} className={cls} aria-sort={on ? (sort!.dir === 1 ? 'ascending' : 'descending') : 'none'} title={title}>
@@ -147,10 +162,10 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
             {rows.length} {rows.length === 1 ? 'company' : 'companies'}
             <span className="muted">
               {narrowed
-                ? ` shown of ${result.rows.length} ${conditions.length ? 'matches' : 'listed'}`
+                ? ` shown of ${result.rows.length} ${conditions.length ? 'matches' : listLabel}`
                 : conditions.length
                   ? ` match, out of ${result.scanned} checked`
-                  : ' listed'}
+                  : ` ${listLabel}`}
             </span>
           </h2>
           {conditions.length > 0 && (
@@ -177,7 +192,7 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
           ⤓ Export CSV
         </button>
       </div>
-      {all.length > 1 && (
+      {(all.length > 1 || stages.length > 0) && (
         <div className="sector-chips" role="group" aria-label="Filter by Weinstein stage">
           <span className="filters-label" title={STAGE_HELP}>
             Stage <span className="info" aria-hidden>ⓘ</span>
@@ -201,7 +216,7 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
           })}
         </div>
       )}
-      {sectorCounts.length > 1 && (
+      {(sectorCounts.length > 1 || sectors.length > 0) && (
         <div className="sector-chips" role="group" aria-label="Filter by sector">
           <span className="filters-label">Sector</span>
           <button className={`chip ${sectors.length === 0 ? 'on' : ''}`} aria-pressed={sectors.length === 0} onClick={() => onSectorsChange([])}>
@@ -253,9 +268,11 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
           <table>
             <thead>
               <tr>
+                <th className="star-col" aria-label="Watchlist" />
                 {header('symbol', 'Symbol', 'left')}
                 {header('close', 'LTP', '', 'Last traded price')}
-                {header('changePct', 'Change', 'hide-sm')}
+                {header('change', 'Pts', 'hide-sm', 'Change from the previous close, in rupees')}
+                {header('changePct', 'Change', 'hide-sm', 'Change from the previous close, in %')}
                 <th className="hide-sm spark-col" title="Closing price, last 60 sessions">
                   3 months
                 </th>
@@ -268,7 +285,11 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {rows.map((r) => {
+                // during a session a stock with no trade yet still shows the change of its last trading day
+                const old = !!result.asOf && r.date < result.asOf;
+                const oldTip = old ? `No trade yet today. Change on ${r.date}, its last trading day.` : undefined;
+                return (
                 <tr
                   key={r.symbol}
                   className={selected === r.symbol ? 'sel' : ''}
@@ -276,6 +297,9 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
                   onClick={() => onSelect(r.symbol, rows.map((x) => x.symbol))}
                   onKeyDown={(e) => e.key === 'Enter' && onSelect(r.symbol, rows.map((x) => x.symbol))}
                 >
+                  <td className="star-col">
+                    <StarButton symbol={r.symbol} />
+                  </td>
                   <td className="left">
                     <span className="sym">{r.symbol}</span>
                     <span className="co" title={r.name}>
@@ -286,7 +310,10 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
                     {fmt.price(r.close)}
                     <span className={`show-sm small-chg ${toneOf(r.changePct)}`}>{fmt.pct(r.changePct)}</span>
                   </td>
-                  <td className="hide-sm">
+                  <td className={`mono hide-sm ${toneOf(r.change)} ${old ? 'old-chg' : ''}`} title={oldTip}>
+                    {fmt.points(r.change)}
+                  </td>
+                  <td className={`hide-sm ${old ? 'old-chg' : ''}`} title={oldTip}>
                     <span className={`pill ${toneOf(r.changePct)}`}>{fmt.pct(r.changePct)}</span>
                   </td>
                   <td className="hide-sm spark-col">
@@ -309,7 +336,8 @@ export function ResultsTable({ result, conditions, loading, error, selected, onS
                   <td className="left hide-sm muted">{r.sector}</td>
                   <td className="mono hide-sm">{fmt.npr(r.avgTurnover)}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -329,6 +357,7 @@ function downloadCsv(rows: ScreenRow[], conditions: Condition[], asOf: string | 
     'Sector',
     'Date',
     'Close',
+    'Change',
     'Change %',
     'Volume',
     'Avg turnover 20D',
@@ -345,6 +374,7 @@ function downloadCsv(rows: ScreenRow[], conditions: Condition[], asOf: string | 
     r.sector,
     r.date,
     r.close,
+    r.change,
     r.changePct?.toFixed(2),
     r.volume,
     r.avgTurnover,

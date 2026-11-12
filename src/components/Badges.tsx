@@ -1,4 +1,3 @@
-// Small read-outs shared by the results table, the leaders page and the chart header.
 import { STAGE_NAMES, TREND_TEMPLATE, type Stage } from '../../shared/analysis.ts';
 
 export const STAGE_HELP =

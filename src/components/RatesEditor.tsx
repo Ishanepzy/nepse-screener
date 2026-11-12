@@ -3,7 +3,6 @@ import { DEFAULT_RATES } from '../../shared/costs.ts';
 import { SLABS } from '../costsStore.ts';
 import { NumInput } from './NumInput.tsx';
 
-/** Broker commission slabs, SEBON fee, DP charge and capital gains tax, editable. */
 export function RatesEditor({ rates, onChange }: { rates: CostRates; onChange: (r: CostRates) => void }) {
   const isDefault = JSON.stringify(rates) === JSON.stringify(DEFAULT_RATES);
   return (

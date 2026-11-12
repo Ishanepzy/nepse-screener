@@ -1,6 +1,5 @@
-// SVG overlay on the price panel that renders and edits drawings. It follows the chart by re-reading the
-// price/time mapping every animation frame and re-rendering only when that mapping changes (pan, zoom, resize,
-// price-scale drag).
+// SVG layer over the price pane for drawings. It re-reads the chart's price/time mapping every frame and only
+// re-renders when that changed (pan, zoom, resize, price-scale drag).
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { IChartApi, ISeriesApi, Logical, SeriesType } from 'lightweight-charts';
 import { Anchors, FIB_LEVELS, TOOLS, newId, type Anchor, type Drawing, type DrawingType } from './drawings.ts';
@@ -12,7 +11,7 @@ interface Props {
   dates: string[];
   drawings: Drawing[];
   onChange: (drawings: Drawing[]) => void;
-  /** Active drawing tool, or null for select / move. */
+  // null = select / move
   tool: DrawingType | null;
   onToolDone: () => void;
   selected: string | null;
@@ -34,7 +33,7 @@ export function DrawingLayer({ chart, series, dates, drawings, onChange, tool, o
   const [preview, setPreview] = useState<Drawing | null>(null);
   const anchors = useMemo(() => new Anchors(dates), [dates]);
 
-  // Follow pans / zooms / resizes.
+  // follow pans, zooms and resizes
   useEffect(() => {
     let raf = 0;
     let last = '';
@@ -56,24 +55,24 @@ export function DrawingLayer({ chart, series, dates, drawings, onChange, tool, o
     return () => cancelAnimationFrame(raf);
   }, [chart, series]);
 
-  // A tool switched off mid-draw drops the half-made drawing.
+  // switching the tool off mid-draw drops the half-made drawing
   useEffect(() => {
     if (!tool) setDraft(null);
   }, [tool]);
 
-  let size = { width: 0, height: 0 };
+  // paneSize throws once the chart has been removed. Bail out only after the last hook below.
+  let size: { width: number; height: number } | null = null;
   try {
     size = chart.paneSize(0);
   } catch {
-    return null;
+    // chart is gone
   }
-  const ts = chart.timeScale();
-  const x = (L: number) => ts.logicalToCoordinate(L as Logical) ?? NaN;
+  const x = (L: number) => chart.timeScale().logicalToCoordinate(L as Logical) ?? NaN;
   const y = (p: number) => series.priceToCoordinate(p) ?? NaN;
 
   const pointAt = (clientX: number, clientY: number): Pt | null => {
     const r = svgRef.current!.getBoundingClientRect();
-    const L = ts.coordinateToLogical(clientX - r.left);
+    const L = chart.timeScale().coordinateToLogical(clientX - r.left);
     const p = series.coordinateToPrice(clientY - r.top);
     return L == null || p == null ? null : { L: Math.round(L), p: Number(p) };
   };
@@ -91,7 +90,7 @@ export function DrawingLayer({ chart, series, dates, drawings, onChange, tool, o
     onToolDone();
   };
 
-  // ---- drawing with a tool: click-click or press-drag-release ----
+  // drawing: click-click, or press-drag-release
   const onToolDown = (e: React.PointerEvent) => {
     if (!tool || e.button !== 0) return;
     const pt = pointAt(e.clientX, e.clientY);
@@ -117,7 +116,7 @@ export function DrawingLayer({ chart, series, dates, drawings, onChange, tool, o
     }
   };
 
-  // ---- selecting / moving existing drawings ----
+  // selecting and moving
   const startDrag = (e: React.PointerEvent, d: Drawing, mode: Drag['mode']) => {
     if (tool || e.button !== 0) return;
     e.stopPropagation();
@@ -152,9 +151,10 @@ export function DrawingLayer({ chart, series, dates, drawings, onChange, tool, o
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
-    // Keyed on `drag` alone: the handlers use this render's drawings and mapping, which can't change mid-drag.
+    // keyed on `drag` alone: the handlers use this render's drawings and mapping, and neither can change mid-drag
   }, [drag]);
 
+  if (!size) return null;
   const W = size.width;
   const H = size.height;
   const shown = drawings.map((d) => (preview?.id === d.id ? preview : d));
@@ -253,7 +253,7 @@ function Shape({ d, g, W, La, Lb, onPointerDown }: ShapeProps) {
         <>
           <line className="draw-line faint" x1={ax} y1={ay} x2={bx} y2={by} />
           {FIB_LEVELS.map((lv) => {
-            // Like TradingView: the first click is level 1, the second is level 0.
+            // same as TradingView: first click is level 1, second is level 0
             const price = pb + (pa - pb) * lv;
             const ly = ay + (by - ay) * (1 - lv);
             return (

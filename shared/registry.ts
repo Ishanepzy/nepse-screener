@@ -6,9 +6,8 @@ export interface ParamDef {
   default: number;
   min: number;
   max: number;
-  /** Non-integer params (multipliers, constants). */
   float?: boolean;
-  /** Words shown around the input box in the UI, e.g. `[20] days` or `fast [12]`. */
+  // words around the input in the UI: `[20] days`, `fast [12]`
   before?: string;
   after?: string;
 }
@@ -16,16 +15,11 @@ export interface ParamDef {
 export interface IndicatorDef {
   id: string;
   label: string;
-  /** Short name used in operand labels, e.g. "EMA". */
   short: string;
   params: ParamDef[];
-  /**
-   * Output lines; the first is the default. Single-line indicators use `value`.
-   * `event` lines are 0/1 flags (1 = it happened on that bar); conditions test them with "happened", and the
-   * chart shows them as markers rather than lines.
-   */
-  lines: { key: string; label: string; event?: boolean }[];
-  /** Where the chart draws it: on the candles, on the volume histogram, or in its own oscillator pane. */
+  // The first line is the default. `event` lines are 0/1 flags: conditions test them with "happened" and the chart
+  // shows them as markers. A `state` event stays on for many bars (holding a breakout), so it gets no markers.
+  lines: { key: string; label: string; event?: boolean; state?: boolean }[];
   pane: 'price' | 'volume' | 'osc';
   compute: (b: Bars, p: number[]) => Record<string, ta.Series>;
 }
@@ -106,7 +100,7 @@ export const INDICATORS: IndicatorDef[] = [
       { key: 'level', label: 'Level' },
       { key: 'start', label: 'Breakout', event: true },
       { key: 'signal', label: 'Follow-through', event: true },
-      { key: 'state', label: 'Holding', event: true },
+      { key: 'state', label: 'Holding', event: true, state: true },
     ],
     pane: 'price',
     compute: (b, [n]) => {
@@ -126,7 +120,7 @@ export const INDICATORS: IndicatorDef[] = [
     ],
     pane: 'osc',
     compute: (b, [n, h]) => {
-      // Close divided by the NEPSE index the same day: rising = beating the market, whatever the market does.
+      // rising = beating the market, whichever way the market itself goes
       const value = b.c.map((c, i) => (b.ix && b.ix[i] > 0 ? c / b.ix[i] : NaN));
       return { value, ma: ta.sma(value, n), high: ta.priorHighest(value, h) };
     },
@@ -202,7 +196,8 @@ export const INDICATORS: IndicatorDef[] = [
 
 export const INDICATOR_BY_ID = new Map(INDICATORS.map((d) => [d.id, d]));
 
-/** True when the operand reads one of its indicator's event lines (0/1 flags). */
+export const isStateLine = (op: Operand) => !!INDICATOR_BY_ID.get(op.id)?.lines.find((l) => l.key === (op.line ?? 'value'))?.state;
+
 export const isEventLine = (op: Operand) => !!INDICATOR_BY_ID.get(op.id)?.lines.find((l) => l.key === (op.line ?? 'value'))?.event;
 
 export function getDef(id: string): IndicatorDef {
@@ -211,7 +206,7 @@ export function getDef(id: string): IndicatorDef {
   return d;
 }
 
-/** Fills in missing params / line with defaults and clamps out-of-range values. */
+// fill in defaults and clamp to the allowed range
 export function normalizeOperand(op: Operand): Operand {
   const def = getDef(op.id);
   const params = def.params.map((p, i) => {
@@ -224,7 +219,7 @@ export function normalizeOperand(op: Operand): Operand {
   return { id: def.id, params, line };
 }
 
-/** Cache key for the computed indicator (all lines), independent of which line is read. */
+// one cache entry per indicator + params, whichever line is read
 export const seriesKey = (op: Operand) => `${op.id}(${op.params.join(',')})`;
 
 export function operandLabel(op: Operand): string {

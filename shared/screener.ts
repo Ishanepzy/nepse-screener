@@ -2,7 +2,7 @@ import type { Bars, Condition, ConditionHit, Operand } from './types.ts';
 import type { Series } from './indicators.ts';
 import { getDef, normalizeOperand, seriesKey } from './registry.ts';
 
-/** Per-symbol memo of computed indicators, keyed by seriesKey. Valid until the symbol's bars change. */
+// computed indicators for one symbol, keyed by seriesKey
 export type SeriesCache = Map<string, Record<string, Series>>;
 
 export function getLine(bars: Bars, op: Operand, cache: SeriesCache): Series {
@@ -17,9 +17,8 @@ export function getLine(bars: Bars, op: Operand, cache: SeriesCache): Series {
 
 export const isCross = (op: Condition['op']) => op === 'crossAbove' || op === 'crossBelow';
 export const isEvent = (op: Condition['op']) => op === 'fired';
-/** Ops with no right-hand side. */
 export const isUnary = (op: Condition['op']) => op === 'rising' || op === 'falling' || op === 'fired';
-/** Ops whose hit says when it happened (bars ago), rather than a value. */
+// ops that report when something happened rather than a value
 export const hasWhen = (op: Condition['op']) => isCross(op) || isEvent(op);
 
 export function normalizeCondition(c: Condition): Condition {
@@ -37,7 +36,6 @@ export function normalizeCondition(c: Condition): Condition {
 
 const finite = (x: number) => (Number.isFinite(x) ? x : null);
 
-/** Evaluates one (normalized) condition on the latest bar of `bars`. */
 export function evaluate(bars: Bars, c: Condition, cache: SeriesCache): ConditionHit {
   const last = bars.c.length - 1;
   const L = getLine(bars, c.left, cache);
@@ -49,7 +47,7 @@ export function evaluate(bars: Bars, c: Condition, cache: SeriesCache): Conditio
   const hit: ConditionHit = { pass: false, left: finite(L[last]), right: unary ? null : finite(R(last)) };
   if (last < 1) return hit;
 
-  // NaN compares false everywhere below, so bars without enough history never pass.
+  // NaN compares false, so bars without enough history never pass
   const gt = (i: number) => L[i] > R(i);
   const lt = (i: number) => L[i] < R(i);
   const forLast = (test: (i: number) => boolean) => {
@@ -100,10 +98,10 @@ export function evaluate(bars: Bars, c: Condition, cache: SeriesCache): Conditio
   return hit;
 }
 
-/** Every bar index where a cross condition fired, or an event started, oldest first (for chart markers). */
+// every bar where the condition fired, oldest first (chart markers)
 export function crossIndices(bars: Bars, c: Condition, cache: SeriesCache): number[] {
   if (isEvent(c.op)) {
-    // Rising edges, so a multi-bar state (e.g. "holding a breakout") marks only where it began.
+    // rising edges only, so a state that lasts many bars is marked where it began
     const L = getLine(bars, c.left, cache);
     const out: number[] = [];
     for (let i = 0; i < L.length; i++) if (L[i] > 0 && !(i > 0 && L[i - 1] > 0)) out.push(i);

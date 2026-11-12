@@ -6,7 +6,7 @@ import type { Bars } from './types.ts';
 
 const bars = (t: string[], c: number[]): Bars => ({ t, c, o: c, h: c, l: c, v: c.map(() => 100) });
 
-test('price ÷ NEPSE uses the index close of the same day, carrying the last one over gaps and live bars', () => {
+test('price / NEPSE uses the index close of the same day, carrying the last one over gaps and live bars', () => {
   const stock = bars(['2026-01-05', '2026-01-06', '2026-01-08'], [100, 110, 120]);
   const index = bars(['2026-01-04', '2026-01-05', '2026-01-06', '2026-01-07'], [1000, 1000, 1100, 1200]);
   const e = new Engine({
@@ -25,4 +25,25 @@ test('price ÷ NEPSE uses the index close of the same day, carrying the last one
   const live = e.ds.bars.get('ABC')!;
   assert.deepEqual(live.ix, [1000, 1100, 1200, 1200]);
   assert.equal(getDef('ratio').compute(live, [2, 2]).value[3], 0.105);
+});
+
+test('watchlist rows keep the given order, skip unknown symbols, and carry the change in points', () => {
+  const co = (symbol: string, sector: string) => ({ symbol, name: symbol, sector, active: true });
+  const e = new Engine({
+    asOf: '2026-01-06',
+    builtAt: null,
+    companies: new Map([
+      ['AAA', co('AAA', 'Hydro Power')],
+      ['MF1', co('MF1', 'Mutual Fund')],
+    ]),
+    bars: new Map([
+      ['AAA', bars(['2026-01-05', '2026-01-06'], [100, 95.5])],
+      ['MF1', bars(['2026-01-05', '2026-01-06'], [10, 10.2])],
+    ]),
+    index: null,
+  });
+  const r = e.watch(['MF1', 'NOPE', 'AAA']);
+  assert.deepEqual(r.rows.map((x) => x.symbol), ['MF1', 'AAA']); // funds too: the watchlist isn't filtered
+  assert.equal(r.rows[1].change, -4.5);
+  assert.equal(r.rows[0].change, 0.2);
 });

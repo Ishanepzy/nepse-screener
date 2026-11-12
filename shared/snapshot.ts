@@ -1,23 +1,21 @@
-// The one data file the site ships: every active symbol's recent daily bars, packed small.
-// Prices are stored as integer paisa, closes as day-to-day differences and open/high/low relative to the close,
-// and dates as steps through a shared calendar. That turns most values into short integers that gzip well
-// (~2.4 MB for four years of ~390 symbols).
+// The data file the site ships. Prices are integer paisa: closes as day-to-day differences, open/high/low
+// relative to the close, dates as steps through one shared calendar. Mostly small integers, so four years of
+// ~390 symbols gzip to about 2.4 MB.
 import type { Bars, Company } from './types.ts';
 import type { Dataset } from './engine.ts';
 
-/** Four years, so EMA(200) has fully settled; with three, borderline crosses could differ from full history. */
+// 4 years. With 3, EMA(200) had not settled and a borderline cross came out different from full history.
 export const SNAPSHOT_YEARS = 4;
 
-/** [date steps, close diffs, open−close, high−close, close−low, volume] */
+// [date steps, close diffs, open - close, high - close, close - low, volume]
 type PackedBars = [number[], number[], number[], number[], number[], number[]];
 
 export interface SnapshotFile {
   v: 1;
   asOf: string | null;
   builtAt: string | null;
-  /** Every trade date in the window, ascending. */
   dates: string[];
-  /** [symbol, name, sector] */
+  // [symbol, name, sector]
   companies: [string, string, string][];
   bars: Record<string, PackedBars>;
   index: PackedBars | null;

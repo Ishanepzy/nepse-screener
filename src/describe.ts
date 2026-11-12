@@ -1,4 +1,4 @@
-// Plain-English readings of operands and conditions, shown under each condition so a scan explains itself.
+// The plain-English sentence shown under each condition in the scan builder.
 import type { Condition, Operand } from '../shared/types.ts';
 import { getDef } from '../shared/registry.ts';
 
@@ -67,7 +67,6 @@ function scaled(op: Operand, factor: number): string {
 
 const days = (k: number) => (k === 1 ? 'day' : `${k} days`);
 
-/** Sentence start for an event line, e.g. "A 21-day breakout started". */
 function describeEvent(op: Operand): string {
   const p = op.params?.[0];
   if (op.id === 'breakout') {

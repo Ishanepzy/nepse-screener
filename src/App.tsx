@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Condition, Market, ScreenResponse } from '../shared/types.ts';
 import { PRESETS } from '../shared/presets.ts';
 import { api, type DataInfo, type OverviewItem } from './api.ts';
@@ -9,6 +9,7 @@ import {
   legacyScanFromHash,
   loadCurrent,
   loadSaved,
+  onSavedChange,
   pageFromHash,
   pageHash,
   scanFromPreset,
@@ -18,7 +19,9 @@ import {
   type SavedScan,
   type Scan,
 } from './scan.ts';
-import { LIVE_POLL_MS, fetchLive, marketMayBeOpen, nepalNow, type LiveSnapshot } from './live.ts';
+import { marketMayBeOpen, nepalNow, sessionState, type Session } from '../shared/clock.ts';
+import { LIVE_POLL_MS, fetchLive, type LiveSnapshot } from './live.ts';
+import { load, save } from './storage.ts';
 import { PresetStrip } from './components/PresetStrip.tsx';
 import { ScanBuilder } from './components/ScanBuilder.tsx';
 import { ResultsTable } from './components/ResultsTable.tsx';
@@ -27,18 +30,15 @@ import { MarketBand } from './components/MarketBand.tsx';
 import { LeadersPage } from './components/LeadersPage.tsx';
 import { CalculatorPage } from './components/CalculatorPage.tsx';
 import { JournalPage } from './components/JournalPage.tsx';
+import { WatchlistPage } from './components/WatchlistPage.tsx';
 import * as fmt from './format.ts';
 
 type Theme = 'light' | 'dark';
 const THEME_KEY = 'nepse.theme';
 
 function initialTheme(): Theme {
-  try {
-    const t = localStorage.getItem(THEME_KEY);
-    if (t === 'light' || t === 'dark') return t;
-  } catch {
-    /* storage blocked */
-  }
+  const t = load(THEME_KEY);
+  if (t === 'light' || t === 'dark') return t;
   return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
@@ -51,7 +51,7 @@ function initialScan(): { scan: Scan; preset: string | null } {
 export function App() {
   const [{ scan, preset }, setScanState] = useState(initialScan);
   const [result, setResult] = useState<ScreenResponse | null>(null);
-  /** The conditions `result` was computed for; the editor may be ahead of it while a scan is pending. */
+  // conditions `result` was computed for; the editor can be ahead of it while a scan is pending
   const [resultConditions, setResultConditions] = useState<Condition[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,30 +59,33 @@ export function App() {
   const [overview, setOverview] = useState<OverviewItem[]>([]);
   const [market, setMarket] = useState<Market | null>(null);
   const [page, setPage] = useState<{ page: Page; symbol: string | null }>(() => pageFromHash(location.hash) ?? { page: 'screener', symbol: null });
-  /** Stock whose chart page is open, and the list it was opened from (for previous / next). */
+  // stock whose chart is open, and the list it was opened from (for prev / next)
   const [chart, setChart] = useState<string | null>(() => chartFromHash(location.hash));
   const [chartList, setChartList] = useState<string[]>([]);
   const chartPushed = useRef(false);
   const [saved, setSaved] = useState<SavedScan[]>(loadSaved);
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [live, setLive] = useState<LiveSnapshot | null>(null);
-  /** Bumped whenever live prices change the data, so everything built on it is fetched again. */
+  const [session, setSession] = useState<Session>(() => sessionState(null));
+  // bumped when live prices change the data, so everything built on it is fetched again
   const [version, setVersion] = useState(0);
 
   const setScan = (s: Scan) => setScanState({ scan: s, preset: null });
 
-  useEffect(() => {
+  // layout effect: the page colours must switch before the chart (a child effect) rebuilds and reads them
+  useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
-  // The scan is remembered in the browser; the URL only names the page or the open chart.
   useEffect(() => storeCurrent(scan, preset), [scan, preset]);
+  // a scan saved or deleted in another tab shows up here, instead of being overwritten by this tab's older list
+  useEffect(() => onSavedChange(() => setSaved(loadSaved())), []);
   useEffect(() => {
-    // Old `#s=` scan links have been read; drop them from the address.
+    // an old #s= scan link has been read by now; drop it from the address
     if (legacyScanFromHash(location.hash)) history.replaceState(null, '', location.pathname + location.search + (chart ? chartHash(chart) : ''));
   }, []);
   useEffect(() => {
-    // Back / forward, and links typed or pasted in.
+    // back / forward, and links typed or pasted in
     const onNav = () => {
       const c = chartFromHash(location.hash);
       setChart(c);
@@ -123,8 +126,8 @@ export function App() {
     }
   }, [page]);
 
-  // Run the scan (debounced, so typing a period doesn't rescan on every keystroke). The sector and stage chips only
-  // filter the table, so they're left out here and every chip's count stays available.
+  // Debounced, so typing a period doesn't rescan on every keystroke. Sector and stage chips only filter the table,
+  // so they are left out of the request and every chip keeps its count.
   const request = { conditions: scan.conditions, match: scan.match, universe: { ...scan.universe, sectors: [], stages: [] } };
   const screenKey = JSON.stringify(request);
   useEffect(() => {
@@ -146,35 +149,44 @@ export function App() {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [screenKey, version]); // screenKey covers everything in `scan` the screen depends on
+  }, [screenKey, version]);
 
   useEffect(() => {
     api.info().then(setInfo).catch(() => {});
     api.market().then(setMarket).catch(() => {});
-    // Counting every preset is the heaviest job; let the first results paint before it starts.
+    // counting every preset is the heaviest job; let the first results paint before it starts
     const t = setTimeout(() => api.overview().then(setOverview).catch(() => {}), 400);
     return () => clearTimeout(t);
   }, [version]);
 
-  // Live prices: read the feed once on arrival (it may already hold a session the data file doesn't), then every
-  // 30 seconds while the market may be open and this tab is visible.
+  // Live prices: every 30 seconds while the market may be open and the tab is visible. Outside those hours one
+  // good read a day is enough: it picks up the close, also for a tab that was hidden when the market shut.
   useEffect(() => {
     let stopped = false;
     let busy = false;
-    let readOnce = false;
+    let feedDate: string | null = null;
+    let doneFor = ''; // Nepal date whose after-hours read is in
+    let failures = 0;
     const poll = async () => {
-      if (busy || stopped || document.hidden || (readOnce && !marketMayBeOpen())) return;
+      // also runs on every tick with no fetch, so the Live badge drops off when the market closes
+      setSession(sessionState(feedDate));
+      const open = marketMayBeOpen();
+      const today = nepalNow().date;
+      if (busy || stopped || document.hidden || (!open && (doneFor === today || failures >= 3))) return;
       busy = true;
       try {
         const snap = await fetchLive();
-        readOnce = true;
+        failures = 0;
+        if (!open) doneFor = today;
         if (snap && !stopped) {
+          feedDate = snap.date;
           const changed = await api.applyLive(snap.date, snap.quotes);
           setLive(snap);
+          setSession(sessionState(feedDate));
           if (changed) setVersion((v) => v + 1);
         }
       } catch {
-        readOnce = true; // feed down or blocked: the daily data still works
+        failures++; // feed down or blocked; the daily file still works
       } finally {
         busy = false;
       }
@@ -192,17 +204,13 @@ export function App() {
 
   const pickPreset = (id: string) => {
     const p = PRESETS.find((x) => x.id === id);
-    // The preset decides the trend template / RS / stage filters; price, turnover and sector choices stay.
+    // the preset sets the trend template / RS / stage filters; price, turnover and sector choices stay
     const universe = { ...scan.universe, trendTemplate: undefined, minRs: undefined, stages: [], ...p?.universe };
     setScanState({ scan: { ...scanFromPreset(id), universe }, preset: id });
   };
 
-  // Live only when the feed holds TODAY's session (Nepal date) during market hours. Before the first trades of the day
-  // it still holds yesterday's close, which is not live.
-  const marketHours = marketMayBeOpen();
-  const today = nepalNow().date;
-  const liveNow = !!live && live.date === today && marketHours;
-  const waiting = marketHours && !liveNow;
+  const liveNow = session === 'live' && !!live;
+  const waiting = session === 'waiting';
 
   return (
     <div className="app">
@@ -249,11 +257,11 @@ export function App() {
               className="muted hide-sm"
               title={
                 waiting
-                  ? "Trading hours, but merolagani's feed has no trades for today yet (it opens at 11:00). Checked every 30 seconds."
+                  ? "No trades today so far: the market opens at 11:00, or it is a holiday. Checked every 30 seconds."
                   : `Prices update automatically every weekday after the market closes.${info?.builtAt ? ` Last download: ${new Date(info.builtAt).toLocaleString()}` : ''}`
               }
             >
-              {info?.asOf ? (waiting ? `${info.asOf} close · waiting for trades` : `Prices as of ${info.asOf}`) : 'Loading data…'}
+              {info?.asOf ? (waiting ? `${info.asOf} close · no trades yet today` : `Prices as of ${info.asOf}`) : 'Loading data…'}
             </span>
           )}
           <button
@@ -263,11 +271,7 @@ export function App() {
             onClick={() => {
               const t = theme === 'dark' ? 'light' : 'dark';
               setTheme(t);
-              try {
-                localStorage.setItem(THEME_KEY, t);
-              } catch {
-                /* ignore */
-              }
+              save(THEME_KEY, t);
             }}
           >
             {theme === 'dark' ? '☀' : '☾'}
@@ -278,7 +282,7 @@ export function App() {
       <main>
         {page.page === 'screener' && (
           <>
-            <MarketBand market={market} live={live && live.date === info?.asOf ? live : null} open={!!liveNow} />
+            <MarketBand market={market} live={live && live.date === info?.asOf ? live : null} open={liveNow} />
             <PresetStrip active={preset} overview={overview} onPick={pickPreset} />
             <ScanBuilder
               scan={scan}
@@ -310,9 +314,20 @@ export function App() {
             />
           </>
         )}
+        {page.page === 'watchlist' && <WatchlistPage version={version} onOpenChart={openChart} />}
         {page.page === 'leaders' && <LeadersPage version={version} onOpenChart={openChart} />}
         {page.page === 'journal' && <JournalPage version={version} onOpenChart={openChart} />}
-        {page.page === 'calculator' && <CalculatorPage symbol={page.symbol} version={version} onOpenChart={(s) => openChart(s, [])} />}
+        {page.page === 'calculator' && (
+          <CalculatorPage
+            symbol={page.symbol}
+            onSymbol={(s) => {
+              history.replaceState(null, '', pageHash('calculator', s));
+              setPage({ page: 'calculator', symbol: s || null });
+            }}
+            version={version}
+            onOpenChart={(s) => openChart(s, [])}
+          />
+        )}
         <footer className="foot muted small">
           Prices from merolagani.com, adjusted for bonus and right shares{liveNow ? '; today’s prices from its live market feed' : ''}. Signals are
           computed on daily closes. Not investment advice.

@@ -3,7 +3,8 @@ import { journalStats, parseJournal, replayJournal, type Trade } from '../../sha
 import type { CostRates } from '../../shared/costs.ts';
 import { api } from '../api.ts';
 import { NO_COSTS, loadRates, saveRates } from '../costsStore.ts';
-import { nepalNow } from '../live.ts';
+import { nepalNow } from '../../shared/clock.ts';
+import { load, onOtherTab, save } from '../storage.ts';
 import * as fmt from '../format.ts';
 import { NumberField } from './NumberField.tsx';
 import { RatesEditor } from './RatesEditor.tsx';
@@ -14,28 +15,17 @@ const OPTS_KEY = 'nepse.journal.options';
 
 function loadTrades(): Trade[] {
   try {
-    return parseJournal(JSON.parse(localStorage.getItem(KEY) ?? '[]'));
+    return parseJournal(load(KEY) ?? []);
   } catch {
     return [];
   }
 }
 
-function storeTrades(trades: Trade[]): boolean {
-  try {
-    localStorage.setItem(KEY, JSON.stringify({ v: 1, trades }));
-    return true;
-  } catch {
-    return false;
-  }
-}
+const storeTrades = (trades: Trade[]) => save(KEY, { v: 1, trades });
 
 function loadOptions(): { withCosts: boolean; withTax: boolean } {
-  try {
-    const v = JSON.parse(localStorage.getItem(OPTS_KEY) ?? 'null');
-    return { withCosts: v?.withCosts !== false, withTax: v?.withTax !== false };
-  } catch {
-    return { withCosts: true, withTax: true };
-  }
+  const v = load(OPTS_KEY) as { withCosts?: boolean; withTax?: boolean } | null;
+  return { withCosts: v?.withCosts !== false, withTax: v?.withTax !== false };
 }
 
 interface Draft {
@@ -74,12 +64,10 @@ export function JournalPage({ version, onOpenChart }: Props) {
     api.lastPrices().then(setPrices).catch(() => {});
   }, [version]);
   useEffect(() => {
-    try {
-      localStorage.setItem(OPTS_KEY, JSON.stringify({ withCosts, withTax }));
-    } catch {
-      /* convenience only */
-    }
+    save(OPTS_KEY, { withCosts, withTax });
   }, [withCosts, withTax]);
+  // entries added in another tab: pick them up, or the next save here would drop them
+  useEffect(() => onOtherTab(KEY, () => setTradesState(loadTrades())), []);
 
   const setTrades = (next: Trade[]) => {
     setTradesState(next);
@@ -102,7 +90,7 @@ export function JournalPage({ version, onOpenChart }: Props) {
   const held = (symbol: string) => result.positions.find((p) => p.symbol === symbol)?.qty ?? 0;
 
   const valid = draft.symbol && draft.qty != null && draft.qty > 0 && draft.price != null && draft.price > 0 && /^\d{4}-\d{2}-\d{2}$/.test(draft.date);
-  const save = () => {
+  const addEntry = () => {
     if (!valid) return;
     const t: Trade = {
       id: draft.id ?? `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
@@ -217,7 +205,7 @@ export function JournalPage({ version, onOpenChart }: Props) {
           className="form-grid trade-form"
           onSubmit={(e) => {
             e.preventDefault();
-            save();
+            addEntry();
           }}
         >
           <div className="seg" role="group" aria-label="Buy or sell">

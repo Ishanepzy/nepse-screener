@@ -1,4 +1,4 @@
-// Market data from merolagani.com's public endpoints (the same ones its own charts and search box use).
+// merolagani.com public endpoints, the ones its own charts and search box call.
 import type { Bars } from '../shared/types.ts';
 
 const BASE = 'https://merolagani.com';
@@ -27,7 +27,7 @@ export interface ListedName {
   name: string;
 }
 
-/** Every symbol merolagani knows, including delisted ones, debentures and promoter shares. */
+// includes delisted symbols, debentures and promoter shares
 export async function fetchCompanyList(): Promise<ListedName[]> {
   const rows = JSON.parse(await get(`${BASE}/handlers/AutoSuggestHandler.ashx?type=Company`)) as { l: string; d: string }[];
   return rows
@@ -40,7 +40,6 @@ export async function fetchCompanyList(): Promise<ListedName[]> {
     });
 }
 
-/** Symbols that traded in the latest session, and that session's date. */
 export async function fetchMarketSummary(): Promise<{ date: string | null; symbols: string[] }> {
   const j = JSON.parse(await get(`${BASE}/handlers/webrequesthandler.ashx?type=market_summary`));
   const d: string | undefined = j?.overall?.d ?? j?.turnover?.date; // "2026/10/09 03:00:00"
@@ -49,7 +48,7 @@ export async function fetchMarketSummary(): Promise<{ date: string | null; symbo
   return { date, symbols };
 }
 
-/** Daily bars, adjusted for bonus / right shares, oldest first. */
+// adjusted for bonus / right shares, oldest first
 export async function fetchBars(symbol: string, years = 5): Promise<Bars> {
   const to = Math.floor(Date.now() / 1000) + 86_400;
   const from = to - Math.round(years * 365.25 * 86_400);
@@ -59,7 +58,7 @@ export async function fetchBars(symbol: string, years = 5): Promise<Bars> {
   const j = JSON.parse(await get(url)) as { s?: string; t?: number[]; o?: number[]; h?: number[]; l?: number[]; c?: number[]; v?: number[] };
   const out: Bars = { t: [], o: [], h: [], l: [], c: [], v: [] };
   if (j.s !== 'ok' || !j.t?.length) return out;
-  // The bar timestamp's UTC calendar date is the trade date (it matches market_summary's session date).
+  // the UTC date of a bar's timestamp is its trade date (it matches market_summary's session date)
   const byDate = new Map<string, number>();
   j.t.forEach((ts, i) => {
     if (!(j.c![i] > 0)) return;
@@ -67,7 +66,7 @@ export async function fetchBars(symbol: string, years = 5): Promise<Bars> {
   });
   for (const [date, i] of [...byDate].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
     const c = j.c![i];
-    // Thinly traded scrips sometimes come back with a 0 open/high/low; fall back to the close.
+    // thinly traded scrips sometimes come back with 0 for open/high/low; use the close
     const pick = (x: number | undefined) => (x && x > 0 ? x : c);
     out.t.push(date);
     out.o.push(pick(j.o?.[i]));
@@ -104,7 +103,7 @@ function decodeEntities(s: string): string {
   return s.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
 }
 
-/** Runs `fn` over `items` with at most `limit` in flight. */
+// at most `limit` calls in flight
 export async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
   let next = 0;
   const worker = async () => {

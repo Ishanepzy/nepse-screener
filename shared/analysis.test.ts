@@ -5,7 +5,7 @@ import { buildProfiles, rsRatings, stageHistory, weeklyCloses } from './analysis
 import { evaluate, normalizeCondition, crossIndices, type SeriesCache } from './screener.ts';
 import type { Bars } from './types.ts';
 
-/** Daily bars Monday–Friday from 2024-01-01, one close per weekday; high/low 1 either side. */
+// weekday bars from 2024-01-01, one close each, high/low 1 either side
 function weekdays(closes: number[]): Bars {
   const t: string[] = [];
   const d = new Date(Date.UTC(2024, 0, 1));

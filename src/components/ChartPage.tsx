@@ -34,8 +34,10 @@ import {
 } from '../chart/indicators.ts';
 import { IndicatorMenu } from './IndicatorMenu.tsx';
 import { RsBadge, StageBadge, TrendTemplateBadge } from './Badges.tsx';
+import { StarButton } from './StarButton.tsx';
+import { load, save } from '../storage.ts';
 
-// Colour-blind-safe categorical order (validated per surface); an indicator keeps its slot for life.
+// colour-blind-safe order, checked on both backgrounds
 const PALETTE = {
   light: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'],
   dark: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'],
@@ -48,13 +50,12 @@ interface Props {
   symbol: string;
   conditions: Condition[];
   theme: 'light' | 'dark';
-  /** The results list this chart was opened from, for previous / next. */
+  // the list this chart was opened from, for prev / next
   list: string[];
-  /** Changes when live prices arrive; the chart reloads its bars in place. */
+  // bumps when live prices arrive
   version: number;
   onNavigate: (symbol: string) => void;
   onClose: () => void;
-  /** Opens the position-size calculator for this stock. */
   onSizePosition: (symbol: string) => void;
 }
 
@@ -71,47 +72,32 @@ function applyRange(chart: IChartApi, n: number, r: Range) {
   else chart.timeScale().setVisibleLogicalRange({ from: n - bars, to: n + 3 });
 }
 
-const readFlag = (key: string, fallback: boolean) => {
-  try {
-    const v = localStorage.getItem(key);
-    return v == null ? fallback : v === '1';
-  } catch {
-    return fallback;
-  }
-};
-const writeFlag = (key: string, v: boolean) => {
-  try {
-    localStorage.setItem(key, v ? '1' : '0');
-  } catch {
-    /* convenience only */
-  }
-};
-
 export function ChartPage({ symbol, conditions, theme, list, version, onNavigate, onClose, onSizePosition }: Props) {
   const [data, setData] = useState<ChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<Range>('1Y');
   const [hover, setHover] = useState<number | null>(null);
   const [parts, setParts] = useState<Parts | null>(null);
-  const [showVolume, setShowVolumeState] = useState(() => readFlag(VOLUME_KEY, true));
+  const [showVolume, setShowVolumeState] = useState(() => load(VOLUME_KEY) !== 0);
   const [showSignals, setShowSignals] = useState(true);
   const [tool, setTool] = useState<DrawingType | null>(null);
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  /** native = browser full screen; focus = fallback where the browser refuses it: hide the title row instead. */
+  // focus = fallback when the browser refuses full screen: hide the title row instead
   const [fullscreen, setFullscreen] = useState<'off' | 'native' | 'focus'>('off');
   const pageRef = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const indicatorSeries = useRef<ISeriesApi<SeriesType>[]>([]);
-  /** The live chart. Effects compare against it: in the commit that swaps charts they still see the old, removed one. */
+  // The chart that's actually alive. In the commit that swaps charts, effects still see the old one in state.
   const liveParts = useRef<Parts | null>(null);
   const rangeRef = useRef(range);
   rangeRef.current = range;
   const dataRef = useRef(data);
   dataRef.current = data;
+  const builtBars = useRef<ChartResponse['bars'] | null>(null);
   const condKey = JSON.stringify(conditions);
 
-  // Indicators: the saved list plus whatever the scan uses. Scan-added ones aren't saved, so they don't pile up.
+  // the saved list plus whatever the scan uses; scan-added ones aren't saved, or they would pile up
   const [indicators, setIndicatorsState] = useState<ChartIndicator[]>(loadIndicators);
   const transient = useRef(new Set<string>());
   useEffect(() => {
@@ -120,35 +106,39 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
       for (const i of merged) if (!current.includes(i)) transient.current.add(i.uid);
       return merged;
     });
-  }, [condKey]); // condKey stands in for conditions, a new array on every render
+  }, [condKey]); // `conditions` is a new array on every render
   const setIndicators = (next: ChartIndicator[]) => {
     setIndicatorsState(next);
     saveIndicators(next.filter((i) => !transient.current.has(i.uid)));
   };
   const setShowVolume = (v: boolean) => {
     setShowVolumeState(v);
-    writeFlag(VOLUME_KEY, v);
+    save(VOLUME_KEY, v ? 1 : 0);
   };
-  // Breakout draws itself grey / green, so its swatch is the green it turns.
-  const colorOf = (ind: ChartIndicator, k = 0) => (ind.id === 'breakout' ? 'var(--up)' : PALETTE[theme][(ind.slot + k) % 8]);
+  // breakout colours itself (violet, gold while holding); its swatch is the gold
+  const colorOf = (ind: ChartIndicator, k = 0) => (ind.id === 'breakout' ? 'var(--bo-on)' : PALETTE[theme][(ind.slot + k) % 8]);
 
   useEffect(() => {
     let off = false;
     setError(null);
     api
-      .chart(symbol, conditions, [])
+      .chart(symbol, conditions)
       .then((d) => {
         if (off) return;
+        if (d.symbol !== dataRef.current?.symbol) setHover(null);
         setData(d);
-        setHover(null);
       })
-      .catch((e) => !off && setError(e.message));
+      .catch((e) => {
+        if (off) return;
+        setData(null); // not the previous stock's candles under this one's name
+        setError(e.message);
+      });
     return () => {
       off = true;
     };
   }, [symbol, condKey, version]);
 
-  // Drawings belong to the stock whose bars are on screen.
+  // drawings belong to the stock whose bars are on screen
   const shownSymbol = data?.symbol;
   useEffect(() => {
     if (!shownSymbol) return;
@@ -161,7 +151,7 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
     if (shownSymbol) saveDrawings(shownSymbol, next);
   };
 
-  // Page-level behaviour: no background scroll, fullscreen state, keyboard shortcuts.
+  // no background scroll while the chart is open; track full screen
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -201,7 +191,7 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  // ---- the chart: candles, volume and signal markers; rebuilt per stock and theme ----
+  // candles, volume and markers; rebuilt per stock and theme
   const shown = data?.symbol;
   useEffect(() => {
     const data = dataRef.current;
@@ -230,6 +220,7 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
     candles.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 } });
     const volume = chart.addSeries(HistogramSeries, { priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
     setBars(null, volume, data.bars);
+    builtBars.current = data.bars;
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     const markers = createSeriesMarkers(candles, []);
     chart.subscribeCrosshairMove((p) => {
@@ -252,30 +243,44 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
 
   const isLive = (p: Parts | null): p is Parts => !!p && p === liveParts.current;
 
-  // New bars for the same stock (live prices): update in place, keeping the zoom.
+  // New bars for the same stock = live prices. They only change today's bar or add it, so use update():
+  // unlike setData it leaves the zoom alone. Anything bigger redraws in full.
   useEffect(() => {
-    if (isLive(parts) && data && data.symbol === shown) setBars(parts.candles, parts.volume, data.bars);
+    if (!isLive(parts) || !data || data.symbol !== shown || data.bars === builtBars.current) return;
+    const old = builtBars.current;
+    const b = data.bars;
+    const n = b.t.length;
+    builtBars.current = b;
+    const lastBarOnly = old && n >= 2 && (n === old.t.length || n === old.t.length + 1) && old.t[n - 2] === b.t[n - 2];
+    if (!lastBarOnly) return setBars(parts.candles, parts.volume, b);
+    const i = n - 1;
+    const css = getComputedStyle(document.documentElement);
+    const color = css.getPropertyValue(b.c[i] >= b.o[i] ? '--up' : '--down').trim() + '55';
+    parts.candles.update({ time: b.t[i], open: b.o[i], high: b.h[i], low: b.l[i], close: b.c[i] });
+    parts.volume.update({ time: b.t[i], value: b.v[i], color });
   }, [parts, data]);
 
   useEffect(() => {
     if (isLive(parts) && data) applyRange(parts.chart, data.bars.t.length, range);
-  }, [range]); // only when the user picks a range; a new chart applies the current one itself
+  }, [range]); // a new chart applies the current range itself
 
   useEffect(() => {
     if (isLive(parts)) parts.volume.applyOptions({ visible: showVolume });
   }, [parts, showVolume]);
 
-  // ---- indicators: torn down and re-added whenever the list changes (the zoom is kept) ----
+  // indicator series: torn down and re-added whenever the list or the data changes
+  // `data` is a new object on every live poll, but its bars only change when this stock traded
+  const dataBars = data?.bars;
   const computed = useMemo(() => {
     const m = new Map<string, ReturnType<typeof computeIndicator>>();
-    if (data) for (const ind of indicators) m.set(ind.uid, computeIndicator(data.bars, ind));
+    if (dataBars) for (const ind of indicators) m.set(ind.uid, computeIndicator(dataBars, ind));
     return m;
-  }, [data, indicators]);
+  }, [dataBars, indicators]);
+  const levelKey = JSON.stringify(data?.levels ?? []);
 
   useEffect(() => {
     if (!isLive(parts) || !data) return;
     const css = getComputedStyle(document.documentElement);
-    const up = css.getPropertyValue('--up').trim();
     const list: SeriesMarker<Time>[] = showSignals
       ? data.markers.map((m) => ({
           time: m.date,
@@ -285,11 +290,12 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
           text: m.text,
         }))
       : [];
-    // Breakout indicators mark their follow-through signals ("B"), whatever the scan is.
+    // breakout follow-throughs get a "B", whatever the scan is
     for (const ind of indicators) {
       if (ind.id !== 'breakout') continue;
       const signal = computed.get(ind.uid)?.signal ?? [];
-      signal.forEach((s, i) => s > 0 && list.push({ time: data.bars.t[i], position: 'belowBar', color: up, shape: 'arrowUp', text: 'B' }));
+      const gold = css.getPropertyValue('--bo-on').trim();
+      signal.forEach((s, i) => s > 0 && list.push({ time: data.bars.t[i], position: 'belowBar', color: gold, shape: 'arrowUp', text: 'B' }));
     }
     list.sort((a, b) => (String(a.time) < String(b.time) ? -1 : String(a.time) > String(b.time) ? 1 : 0));
     parts.markers.setMarkers(list);
@@ -297,6 +303,8 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
   useEffect(() => {
     if (!isLive(parts) || !data) return;
     const { chart } = parts;
+    // heights the user dragged the panes to, put back below if the pane count is unchanged
+    const heights = chart.panes().map((p) => p.getStretchFactor());
     for (const s of indicatorSeries.current) chart.removeSeries(s);
     indicatorSeries.current = [];
     while (chart.panes().length > 1) chart.removePane(chart.panes().length - 1);
@@ -325,7 +333,7 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
           const ratio = ind.id === 'ratio';
           const color =
             ind.id === 'breakout'
-              ? up
+              ? v('--bo-off')
               : ind.id === 'adx' && ln.key !== 'adx'
                 ? ln.key === 'pdi'
                   ? up
@@ -339,10 +347,10 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
               ...scale,
               color,
               lineWidth: ind.id === 'bb' || (ratio && ln.key !== 'value') ? 1 : 2,
-              // The ratio's average is dashed and its prior high dotted, in the ratio's own colour / grey.
+              // ratio: dashed average, dotted prior high
               lineStyle: (ind.id === 'bb' && ln.key === 'middle') || (ratio && ln.key === 'ma') ? LineStyle.Dashed : ratio && ln.key === 'high' ? LineStyle.Dotted : LineStyle.Solid,
               lineType: ind.id === 'hh' || ind.id === 'll' || ind.id === 'breakout' || (ratio && ln.key === 'high') ? LineType.WithSteps : LineType.Simple,
-              // A price ÷ index ratio is around 0.1–1: the axis needs 4 decimals.
+              // a price / index ratio is around 0.1 to 1, so the axis needs 4 decimals
               ...(ratio ? { priceFormat: { type: 'price' as const, precision: 4, minMove: 0.0001 } } : {}),
               priceLineVisible: false,
               lastValueVisible: true,
@@ -354,10 +362,10 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
             bars.t.map((time, i) => {
               const val = vals[i];
               if (!Number.isFinite(val)) return { time };
-              // Supertrend reads as support (green, under price) or resistance (red, over price).
+              // supertrend: green under price (support), red over it (resistance)
               if (ind.id === 'supertrend') return { time, value: val, color: bars.c[i] >= val ? up : down };
-              // A breakout's level is grey, and green from a breakout until a close falls back below the level it broke.
-              if (ind.id === 'breakout') return { time, value: val, color: lines.state[i] > 0 ? up : v('--muted') };
+              // violet, gold while a breakout holds. Neither is a candle or MA colour, so the line reads over price.
+              if (ind.id === 'breakout') return { time, value: val, color: lines.state[i] > 0 ? v('--bo-on') : v('--bo-off') };
               return { time, value: val };
             }),
           );
@@ -372,14 +380,16 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
         if (lv.group === indicatorKey(ind)) first!.createPriceLine({ price: lv.value, color: v('--accent'), lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'scan' });
       }
     }
-    chart.panes().forEach((p, i) => p.setStretchFactor(i === 0 ? 3 : 1));
-  }, [parts, computed]); // computed changes whenever data or the indicator list does
+    const panes = chart.panes();
+    const keep = heights.length === panes.length && panes.length > 1;
+    panes.forEach((p, i) => p.setStretchFactor(keep ? heights[i] : i === 0 ? 3 : 1));
+  }, [parts, computed, levelKey]);
 
   const toggleFullscreen = () => {
     if (fullscreen === 'native') void document.exitFullscreen();
     else if (fullscreen === 'focus') setFullscreen('off');
     else if (document.fullscreenEnabled && pageRef.current?.requestFullscreen) {
-      // Some embedded browsers neither grant nor refuse; treat a request still pending after a moment as refused.
+      // some embedded browsers neither grant nor refuse: a request still pending after a moment counts as refused
       let settled = false;
       pageRef.current.requestFullscreen().then(
         () => (settled = true),
@@ -409,12 +419,15 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
           ← Back
         </button>
         <div className="cp-title">
-          <h2>{symbol}</h2>
+          <h2>
+            {symbol} <StarButton symbol={symbol} />
+          </h2>
           <span className="muted">{data ? `${data.name} · ${data.sector}` : ' '}</span>
         </div>
         {b && n > 1 && (
           <div className="quote">
             <span className="quote-price mono">{fmt.price(b.c[n - 1])}</span>
+            <span className={`mono ${tone(lastChg)}`}>{fmt.points(n > 1 ? b.c[n - 1] - b.c[n - 2] : null)}</span>
             <span className={`pill ${tone(lastChg)}`}>{fmt.pct(lastChg)}</span>
             <span className="muted small hide-sm">{b.t[n - 1]}</span>
           </div>
@@ -549,7 +562,7 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
                           </b>
                         ))}
                     {lines && ind.id === 'breakout' && (
-                      <span className={lines.state[i] > 0 ? 'up' : 'muted'} title="Holding = closed above the level and hasn't closed back below the level it broke">
+                      <span className={lines.state[i] > 0 ? 'bo-on' : 'muted'} title="Holding = closed above the level and hasn't closed back below the level it broke">
                         {lines.state[i] > 0 ? `holding above ${fmt.price(lines.base[i])}` : 'no breakout'}
                       </span>
                     )}
@@ -573,7 +586,6 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
   );
 }
 
-/** Candles and/or volume from the bars (either series may be skipped). */
 function setBars(candles: ISeriesApi<'Candlestick'> | null, volume: ISeriesApi<'Histogram'> | null, bars: ChartResponse['bars']) {
   if (candles) candles.setData(bars.t.map((t, i) => ({ time: t, open: bars.o[i], high: bars.h[i], low: bars.l[i], close: bars.c[i] })));
   if (volume) {
@@ -612,7 +624,7 @@ function SymbolSearch({ onPick }: { onPick: (symbol: string) => void }) {
         value={q}
         onChange={(e) => {
           setQ(e.target.value);
-          // Picking from the suggestion list jumps straight there; typing waits for Enter.
+          // picking a suggestion jumps straight there; typing waits for Enter
           const ev = e.nativeEvent as InputEvent;
           if (!(ev instanceof InputEvent) || ev.inputType === 'insertReplacementText') pick(e.target.value);
         }}

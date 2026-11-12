@@ -1,9 +1,10 @@
-// The fee and tax rates the calculator and journal use: SEBON's defaults, editable, remembered in this browser.
+// Fee rates as edited by the user; SEBON defaults until then.
 import { DEFAULT_RATES, type CostRates } from '../shared/costs.ts';
+import { load, save } from './storage.ts';
 
 const KEY = 'nepse.costRates.v1';
 
-/** Slab limits are fixed (SEBON's); the user edits the percentages. */
+// slab limits are fixed, only the percentages can be edited
 export const SLABS = ['Up to Rs 50,000', 'Rs 50,000 – 5 lakh', 'Rs 5 – 20 lakh', 'Rs 20 lakh – 1 crore', 'Above Rs 1 crore'];
 
 interface Stored {
@@ -17,31 +18,22 @@ interface Stored {
 const ok = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x) && x >= 0;
 
 export function loadRates(): CostRates {
-  try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Stored | null;
-    if (v && Array.isArray(v.pcts) && v.pcts.length === DEFAULT_RATES.tiers.length && v.pcts.every(ok)) {
-      return {
-        tiers: DEFAULT_RATES.tiers.map((t, i) => ({ upTo: t.upTo, pct: v.pcts[i] })),
-        sebonPct: ok(v.sebonPct) ? v.sebonPct : DEFAULT_RATES.sebonPct,
-        dpCharge: ok(v.dpCharge) ? v.dpCharge : DEFAULT_RATES.dpCharge,
-        cgtShortPct: ok(v.cgtShortPct) ? v.cgtShortPct : DEFAULT_RATES.cgtShortPct,
-        cgtLongPct: ok(v.cgtLongPct) ? v.cgtLongPct : DEFAULT_RATES.cgtLongPct,
-      };
-    }
-  } catch {
-    /* blocked or corrupt: defaults */
-  }
-  return DEFAULT_RATES;
+  const v = load(KEY) as Partial<Stored> | null;
+  const pcts = v?.pcts;
+  if (!Array.isArray(pcts) || pcts.length !== DEFAULT_RATES.tiers.length || !pcts.every(ok)) return DEFAULT_RATES;
+  const d = DEFAULT_RATES;
+  return {
+    tiers: d.tiers.map((t, i) => ({ upTo: t.upTo, pct: pcts[i] })),
+    sebonPct: ok(v?.sebonPct) ? v.sebonPct : d.sebonPct,
+    dpCharge: ok(v?.dpCharge) ? v.dpCharge : d.dpCharge,
+    cgtShortPct: ok(v?.cgtShortPct) ? v.cgtShortPct : d.cgtShortPct,
+    cgtLongPct: ok(v?.cgtLongPct) ? v.cgtLongPct : d.cgtLongPct,
+  };
 }
 
 export function saveRates(r: CostRates) {
-  try {
-    const v: Stored = { pcts: r.tiers.map((t) => t.pct), sebonPct: r.sebonPct, dpCharge: r.dpCharge, cgtShortPct: r.cgtShortPct, cgtLongPct: r.cgtLongPct };
-    localStorage.setItem(KEY, JSON.stringify(v));
-  } catch {
-    /* convenience only */
-  }
+  const v: Stored = { pcts: r.tiers.map((t) => t.pct), sebonPct: r.sebonPct, dpCharge: r.dpCharge, cgtShortPct: r.cgtShortPct, cgtLongPct: r.cgtLongPct };
+  save(KEY, v);
 }
 
-/** Every cost at zero, for "leave fees out". */
 export const NO_COSTS: CostRates = { tiers: DEFAULT_RATES.tiers.map((t) => ({ upTo: t.upTo, pct: 0 })), sebonPct: 0, dpCharge: 0, cgtShortPct: 0, cgtLongPct: 0 };

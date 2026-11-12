@@ -1,10 +1,9 @@
-// On-disk cache of companies + daily bars (data/), and the job that refreshes it from merolagani.
-// The cache keeps sector lookups and the list of active symbols between runs, so a daily refresh only
-// re-downloads prices.
+// data/ cache of companies and daily bars, and the refresh from merolagani.
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Bars, Company } from '../shared/types.ts';
 import { daysBetween, type Dataset } from '../shared/engine.ts';
+import { nepalNow } from '../shared/clock.ts';
 import { fetchBars, fetchCompanyList, fetchMarketSummary, fetchSector, pool, prettySector } from './source.ts';
 
 const DATA_DIR = process.env.NEPSE_DATA_DIR ?? path.resolve(import.meta.dirname, '..', 'data');
@@ -13,9 +12,9 @@ const COMPANIES_FILE = path.join(DATA_DIR, 'companies.json');
 const META_FILE = path.join(DATA_DIR, 'meta.json');
 const INDEX_FILE = path.join(DATA_DIR, 'index.json');
 
-/** A symbol with no trade for this long is treated as suspended / delisted and stops being refreshed. */
+// no trade for this long = suspended or delisted; stop refreshing it
 const ACTIVE_WITHIN_DAYS = 60;
-/** Re-scan the full merolagani symbol list this often, to pick up new listings that rarely trade. */
+// how often to re-scan the full symbol list (new listings that rarely trade)
 const DISCOVER_EVERY_DAYS = 7;
 
 interface Meta {
@@ -24,7 +23,7 @@ interface Meta {
   discoveredAt: string | null;
 }
 
-/** Some debenture symbols contain '/', e.g. NICD83/84. */
+// some debenture symbols contain '/', e.g. NICD83/84
 const barsFile = (symbol: string) => path.join(BARS_DIR, `${encodeURIComponent(symbol)}.json`);
 
 async function writeJson(file: string, data: unknown) {
@@ -39,11 +38,6 @@ async function readJson<T>(file: string, fallback: T): Promise<T> {
   } catch {
     return fallback;
   }
-}
-
-/** Today's date in Nepal (UTC+5:45). */
-function today(): string {
-  return new Date(Date.now() + 345 * 60_000).toISOString().slice(0, 10);
 }
 
 export class Store {
@@ -70,7 +64,6 @@ export class Store {
     return { asOf: this.meta.asOf, builtAt: this.meta.lastRefresh, companies, bars: this.bars, index: this.index };
   }
 
-  /** Downloads fresh bars for every active symbol (and, when discovering, every listed one). Throws on failure. */
   async refresh({ discover = false, log = () => {} }: { discover?: boolean; log?: (msg: string) => void } = {}) {
     const [listed, summary, index] = await Promise.all([fetchCompanyList(), fetchMarketSummary(), fetchBars('NEPSE').catch(() => null)]);
     if (index?.t.length) {
@@ -83,24 +76,26 @@ export class Store {
       else this.companies.set(symbol, { symbol, name, active: false });
     }
 
-    const stale = !this.meta.discoveredAt || daysBetween(this.meta.discoveredAt.slice(0, 10), today()) >= DISCOVER_EVERY_DAYS;
+    const stale = !this.meta.discoveredAt || daysBetween(this.meta.discoveredAt.slice(0, 10), nepalNow().date) >= DISCOVER_EVERY_DAYS;
     const doDiscover = discover || stale || this.bars.size === 0;
     const todo = new Set(summary.symbols);
     for (const c of this.companies.values()) {
       if (c.active) todo.add(c.symbol);
-      // Promoter shares are untradeable for the public and make up ~300 of the symbols; skip them in discovery.
+      // promoter shares can't be traded by the public and are ~300 of the symbols; skip them
       else if (doDiscover && !/promot[eo]r/i.test(c.name)) todo.add(c.symbol);
     }
     for (const s of todo) if (!this.companies.has(s)) this.companies.set(s, { symbol: s, name: s, active: false });
 
     const symbols = [...todo];
     log(`${doDiscover ? 'Discovering listed companies' : 'Downloading price history'}: ${symbols.length} symbols`);
-    const asOfGuess = summary.date ?? today();
+    const asOfGuess = summary.date ?? nepalNow().date;
     let failed = 0;
     let done = 0;
     await pool(symbols, 6, async (symbol) => {
       try {
         const b = await fetchBars(symbol);
+        // history doesn't vanish: an empty answer for a symbol we already have is a glitch, so keep the cache
+        if (!b.t.length && this.bars.has(symbol)) throw new Error('empty response');
         const c = this.companies.get(symbol)!;
         const last = b.t.at(-1);
         c.lastBar = last;

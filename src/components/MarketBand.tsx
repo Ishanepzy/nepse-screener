@@ -5,9 +5,8 @@ import { Sparkline } from './Sparkline.tsx';
 
 interface Props {
   market: Market | null;
-  /** Today's totals from the live feed, when it covers the latest session. */
+  // day totals from the live feed, when it covers the latest session
   live: LiveSnapshot | null;
-  /** The market is open and `live` is current. */
   open: boolean;
 }
 
@@ -16,7 +15,7 @@ export function MarketBand({ market, live, open }: Props) {
   const b = market?.breadth;
   const total = b ? b.up + b.down + b.flat : 0;
   const tone = (x: number) => (x > 0 ? 'up' : x < 0 ? 'down' : '');
-  // The live feed has no index value, so during the session the index shows the last close.
+  // the live feed has no index value, so during the session this is still the last close
   const staleIndex = ix && market?.asOf && ix.date < market.asOf;
   return (
     <section className="card market" aria-label="Market today">

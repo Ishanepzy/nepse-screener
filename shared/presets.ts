@@ -4,11 +4,11 @@ export interface Preset {
   id: string;
   name: string;
   description: string;
-  /** `list`: no conditions, just a filtered list of stocks (All stocks, Trend template, Stage 2 leaders). */
+  // list = no conditions, only filters (All stocks, Trend template, Stage 2 leaders)
   bias: 'list' | 'bull' | 'bear' | 'neutral';
   match: 'all' | 'any';
   conditions: Condition[];
-  /** Filters the preset sets. Picking a preset resets these three and keeps the user's other filters. */
+  // picking a preset resets these three filters and leaves the others alone
   universe?: Pick<Universe, 'trendTemplate' | 'minRs' | 'stages'>;
 }
 

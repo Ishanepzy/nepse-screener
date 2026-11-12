@@ -14,7 +14,7 @@ const OPS: { value: Op; label: string }[] = [
   { value: 'rising', label: 'is rising' },
   { value: 'falling', label: 'is falling' },
 ];
-/** Event lines (e.g. a breakout's follow-through) are on or off, so the only question is whether they happened. */
+// event lines are on or off, so "happened" is the only thing to ask
 const EVENT_OPS: { value: Op; label: string }[] = [{ value: 'fired', label: 'happened' }];
 
 const MULTIPLY_HELP = 'Compare against a multiple of the right side, e.g. "Volume is above 2 times Avg Volume" or "Close is above 0.95 times Highest high".';
@@ -33,7 +33,7 @@ export function ConditionRow({ index, cond, onChange, onRemove }: Props) {
   const event = isEventLine(cond.left);
   const set = (patch: Partial<Condition>) => {
     const next = { ...cond, ...patch };
-    // Keep the comparison valid for the left side: events only "happen", values never do.
+    // keep the comparison valid for the left side: events can only "happen", values never do
     const ev = isEventLine(next.left);
     if (ev && next.op !== 'fired') next.op = 'fired';
     if (!ev && next.op === 'fired') next.op = 'above';

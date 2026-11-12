@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { Condition, Universe } from '../../shared/types.ts';
 import type { SavedScan, Scan } from '../scan.ts';
 import { ConditionRow } from './ConditionRow.tsx';
 import { defaultOperand } from './OperandPicker.tsx';
+import { NumberField } from './NumberField.tsx';
+import { usePopover } from '../usePopover.ts';
 
 const RS_OPTIONS = [
   { label: 'Any', value: 0 },
@@ -82,9 +84,9 @@ export function ScanBuilder({ scan, onChange, saved, onSave, onLoadSaved, onDele
         </label>
         <span className="field">
           <span>Price from</span>
-          <OptionalNumber value={u.minPrice} label="Lowest price" onChange={(v) => setUniverse({ minPrice: v })} />
+          <NumberField value={u.minPrice ?? null} label="Lowest price" placeholder="any" width="6ch" onChange={(v) => setUniverse({ minPrice: v ?? undefined })} />
           <span>to</span>
-          <OptionalNumber value={u.maxPrice} label="Highest price" onChange={(v) => setUniverse({ maxPrice: v })} />
+          <NumberField value={u.maxPrice ?? null} label="Highest price" placeholder="any" width="6ch" onChange={(v) => setUniverse({ maxPrice: v ?? undefined })} />
         </span>
         <label
           className="check"
@@ -116,53 +118,6 @@ export function ScanBuilder({ scan, onChange, saved, onSave, onLoadSaved, onDele
       </div>
     </section>
   );
-}
-
-/** Number box that can be left empty (= no limit). */
-function OptionalNumber({ value, onChange, label }: { value: number | undefined; onChange: (v: number | undefined) => void; label: string }) {
-  const [text, setText] = useState(value == null ? '' : String(value));
-  // Follow outside changes (preset, saved scan) without rewriting what the user is typing.
-  useEffect(() => {
-    setText((t) => {
-      const typed = t.trim() === '' ? undefined : Number(t);
-      return typed === value ? t : value == null ? '' : String(value);
-    });
-  }, [value]);
-  return (
-    <input
-      className="num"
-      inputMode="decimal"
-      placeholder="any"
-      aria-label={label}
-      title={label}
-      style={{ width: 'calc(6ch + 18px)' }}
-      value={text}
-      onChange={(e) => {
-        const t = e.target.value;
-        setText(t);
-        if (t.trim() === '') onChange(undefined);
-        else if (Number.isFinite(Number(t)) && Number(t) >= 0) onChange(Number(t));
-      }}
-    />
-  );
-}
-
-function usePopover() {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    document.addEventListener('keydown', close);
-    return () => {
-      document.removeEventListener('mousedown', close);
-      document.removeEventListener('keydown', close);
-    };
-  }, [open]);
-  return { open, setOpen, ref };
 }
 
 function SavedMenu({

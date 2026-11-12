@@ -1,42 +1,35 @@
-// Whole-market reads of each stock: Weinstein stage, relative-strength (RS) rating, Minervini's trend template,
-// and recent returns. Computed once per dataset for the latest bar, since the RS rating ranks every stock
-// against the rest.
+// Weinstein stage, RS rating and trend template for every stock, as of its last bar.
 import type { Bars } from './types.ts';
 import { sma } from './indicators.ts';
 
 export type Stage = 1 | 2 | 3 | 4;
 
 export interface StagePoint {
-  /** Last trade date of the week. */
   date: string;
   stage: Stage;
 }
 
 export interface Profile {
-  /** RS rating 1–99 among company shares (99 = stronger than 99% of them). Null for funds/debentures or short history. */
+  // 1-99 among company shares. null for funds, debentures and short histories.
   rs: number | null;
-  /** Weighted 3/6/9/12-month return (%) the rating ranks. */
+  // the weighted return the rating ranks
   rsScore: number | null;
   stage: Stage | null;
-  /** How many weeks in a row the stock has been in `stage` (this week included). */
+  // weeks in a row in this stage, the current one included
   stageWeeks: number;
-  /** Trend template rules met (0–8); `ttChecks` holds each rule's result in TREND_TEMPLATE order. */
+  // rules met, and each result in TREND_TEMPLATE order
   tt: number;
   ttChecks: boolean[];
-  /** Highest high / lowest low of the last 52 weeks (today included). */
   high52: number | null;
   low52: number | null;
-  /** % returns over 1, 3, 6 and 12 months. */
   ret: { m1: number | null; m3: number | null; m6: number | null; y1: number | null };
 }
 
-// ---- weeks ----
-
 const DAY = 86_400_000;
-/** Weeks run Sunday to Saturday, which holds both NEPSE calendars (Sun–Thu before April 2026, Mon–Fri since). */
+// Sunday-to-Saturday weeks fit both NEPSE calendars: Sun-Thu until April 2026, Mon-Fri since.
 const weekOf = (date: string) => Math.floor((Date.parse(date) / DAY - 3) / 7); // 1970-01-04 was a Sunday
 
-/** Weekly closes: the last daily close of each week, with the date of that bar. The latest week may be partial. */
+// Last close of each week. The newest week can be a partial one.
 export function weeklyCloses(b: Bars): { t: string[]; c: number[] } {
   const t: string[] = [];
   const c: number[] = [];
@@ -55,23 +48,15 @@ export function weeklyCloses(b: Bars): { t: string[]; c: number[] } {
   return { t, c };
 }
 
-// ---- Weinstein stage ----
-
-/** Weinstein's 30-week moving average. */
+// 30-week average of weekly closes. Its slope is taken over 4 weeks, and under 0.5% counts as flat.
 export const STAGE_MA_WEEKS = 30;
-/** The average's slope is measured over this many weeks... */
 export const STAGE_SLOPE_WEEKS = 4;
-/** ...and counts as flat when it moved less than this many percent. */
 export const STAGE_FLAT_PCT = 0.5;
 
-/**
- * Stage of every week, from the 30-week average of weekly closes and its 4-week slope:
- *  - Stage 2 (advancing): close above a rising average.
- *  - Stage 4 (declining): close below a falling average.
- *  - Otherwise the average is flat, or price is on the wrong side of it: Stage 3 (topping) if the last trend was
- *    up, Stage 1 (basing) if it was down. Before any trend is seen, the average's direction over 13 weeks decides.
- * Weeks before the average and its slope exist get no stage.
- */
+// Stage per week, from the 30-week average of weekly closes:
+//   2 = close above a rising average, 4 = close below a falling one.
+//   Anything else is 3 if the last trend was up and 1 if it was down
+//   (until a trend shows up, the 13-week direction of the average decides).
 export function stageHistory(b: Bars): StagePoint[] {
   const { t, c } = weeklyCloses(b);
   const ma = sma(c, STAGE_MA_WEEKS);
@@ -97,9 +82,7 @@ export function stageHistory(b: Bars): StagePoint[] {
 
 export const STAGE_NAMES: Record<Stage, string> = { 1: 'Basing', 2: 'Advancing', 3: 'Topping', 4: 'Declining' };
 
-// ---- returns and RS ----
-
-/** Close of the last bar on or before `date`, or NaN if history doesn't reach back that far. */
+// NaN when the history starts after `date`
 function closeOnOrBefore(b: Bars, date: number): number {
   if (Date.parse(b.t[0]) > date) return NaN;
   let lo = 0;
@@ -112,14 +95,13 @@ function closeOnOrBefore(b: Bars, date: number): number {
   return b.c[lo];
 }
 
-/** % return over the last `days` calendar days. */
 function returnOver(b: Bars, days: number): number | null {
   const last = b.c.length - 1;
   const then = closeOnOrBefore(b, Date.parse(b.t[last]) - days * DAY);
   return then > 0 ? (b.c[last] / then - 1) * 100 : null;
 }
 
-/** IBD-style weighting: the latest quarter counts double. */
+// IBD-style: the latest quarter counts double
 const RS_WEIGHTS: [days: number, weight: number][] = [
   [91, 0.4],
   [182, 0.2],
@@ -127,7 +109,7 @@ const RS_WEIGHTS: [days: number, weight: number][] = [
   [365, 0.2],
 ];
 
-/** Weighted return used for the RS rating. Needs at least 3 months of history; shorter spans are re-weighted. */
+// Needs 3 months of history. Spans the stock is too young for are left out and the rest re-weighted.
 export function rsScore(b: Bars): number | null {
   let sum = 0;
   let weight = 0;
@@ -140,7 +122,7 @@ export function rsScore(b: Bars): number | null {
   return weight >= 0.4 ? sum / weight : null;
 }
 
-/** Percentile rank 1–99 of each score among all of them (ties share a rank). */
+// percentile rank 1-99, ties share a rank
 export function rsRatings(scores: Map<string, number>): Map<string, number> {
   const sorted = [...scores].sort((a, b) => a[1] - b[1]);
   const n = sorted.length;
@@ -156,9 +138,7 @@ export function rsRatings(scores: Map<string, number>): Map<string, number> {
   return out;
 }
 
-// ---- trend template ----
-
-/** Mark Minervini's trend template, in the order `Profile.ttChecks` reports them. */
+// Minervini's trend template. Profile.ttChecks follows this order.
 export const TREND_TEMPLATE = [
   'Price above the 150-day and 200-day averages',
   '150-day average above the 200-day average',
@@ -181,7 +161,7 @@ function trendTemplate(b: Bars, rs: number | null, high52: number | null, low52:
   const s150 = at(sma(b.c, 150));
   const sma200 = sma(b.c, 200);
   const s200 = at(sma200);
-  // NaN compares false, so a stock without enough history fails the rules it can't be judged on.
+  // NaN compares false, so a rule that needs more history than the stock has simply fails
   return [
     c > s150 && c > s200,
     s150 > s200,
@@ -194,11 +174,9 @@ function trendTemplate(b: Bars, rs: number | null, high52: number | null, low52:
   ];
 }
 
-// ---- all together ----
-
 export interface ProfileInput {
   bars: Bars;
-  /** Ranked for RS: company shares that are still trading. Others get a profile without a rating. */
+  // only company shares that still trade are ranked; the rest get no RS rating
   ranked: boolean;
 }
 

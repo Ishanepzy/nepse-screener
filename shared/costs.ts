@@ -1,19 +1,18 @@
-// NEPSE trading costs, shared by the position-size calculator and the trade journal. Rates change from time to
-// time and some brokers differ, so these are defaults the user can edit.
+// NEPSE fees and tax for the calculator and the journal. These are defaults; the UI lets the user edit them.
 
 export interface CostRates {
-  /** Broker commission: the whole transaction amount pays the rate of the slab it falls in. Last slab has no limit. */
+  // the whole amount pays the rate of the slab it falls in
   tiers: { upTo: number; pct: number }[];
-  /** SEBON transaction fee, % of the amount, both sides. */
+  // % of the amount, both sides
   sebonPct: number;
-  /** CDSC DP charge per stock sold (Rs). */
+  // Rs, per stock sold
   dpCharge: number;
-  /** Capital gains tax for individuals, % of the gain: held 365 days or less / longer. */
+  // % of the gain: held up to a year / longer
   cgtShortPct: number;
   cgtLongPct: number;
 }
 
-/** SEBON's 2024 commission schedule (0.36% down to 0.24%), 0.015% SEBON fee, Rs 25 DP charge, 7.5% / 5% CGT. */
+// SEBON schedule from 2024
 export const DEFAULT_RATES: CostRates = {
   tiers: [
     { upTo: 50_000, pct: 0.36 },
@@ -38,7 +37,6 @@ export interface BuyCost {
   amount: number;
   commission: number;
   sebon: number;
-  /** What leaves the bank account. */
   total: number;
 }
 
@@ -54,16 +52,11 @@ export interface SellProceeds {
   commission: number;
   sebon: number;
   dp: number;
-  /** Capital gains tax on the gain over `costBasis` (0 on a loss). */
   cgt: number;
-  /** What reaches the bank account. */
   net: number;
 }
 
-/**
- * Selling `qty` at `price`. `costBasis` is what those shares cost including buy fees; `heldDays` picks the CGT rate.
- * Pass `withTax: false` to leave tax out (e.g. institutions, or to compare before tax).
- */
+// costBasis = what the shares cost with buy fees. heldDays picks the CGT rate.
 export function sellProceeds(
   qty: number,
   price: number,
@@ -84,18 +77,14 @@ export function sellProceeds(
 
 export interface PositionPlan {
   shares: number;
-  /** Cost of the shares including buy fees. */
   cost: number;
-  /** Loss if the stop is hit, after fees on both sides (no tax on a loss). */
+  // loss at the stop, fees on both sides
   riskAtStop: number;
-  /** Why the size stopped where it did. */
+  // what stopped the size where it is (also set when not even one lot fits); none = bad inputs
   limit: 'risk' | 'capital' | 'none';
 }
 
-/**
- * The most shares whose loss at `stop` (fees included) stays within `maxRisk`, without spending more than `capital`.
- * Rounded down to a multiple of `lot`.
- */
+// Biggest position whose loss at the stop (fees included) fits maxRisk and whose cost fits capital.
 export function sizePosition(
   capital: number,
   maxRisk: number,
@@ -105,17 +94,25 @@ export function sizePosition(
   rates: CostRates = DEFAULT_RATES,
 ): PositionPlan {
   const step = Math.max(1, Math.floor(lot));
-  const empty: PositionPlan = { shares: 0, cost: 0, riskAtStop: 0, limit: 'none' };
-  if (!(entry > 0) || !(stop >= 0) || stop >= entry || !(maxRisk > 0) || !(capital > 0)) return empty;
+  const none = (limit: PositionPlan['limit']): PositionPlan => ({ shares: 0, cost: 0, riskAtStop: 0, limit });
+  if (!(entry > 0) || !(stop >= 0) || stop >= entry || !(maxRisk > 0) || !(capital > 0)) return none('none');
   const lossAt = (q: number) => {
     const cost = buyCost(q, entry, rates).total;
     return cost - sellProceeds(q, stop, cost, 0, rates, false).net;
   };
   // Start from the fee-free answer and step down; fees only ever shrink it.
+  // `limit` is whichever test forced the last step, since fees can make risk bite where capital looked tighter.
   const byRisk = Math.floor(maxRisk / (entry - stop) / step) * step;
-  const byCapital = Math.floor(capital / (entry * 1.01) / step) * step; // 1% headroom covers buy fees
+  const byCapital = Math.floor(capital / entry / step) * step;
+  if (byCapital === 0) return none('capital'); // can't pay for one lot, whatever the risk allows
   let q = Math.min(byRisk, byCapital);
-  while (q > 0 && (lossAt(q) > maxRisk || buyCost(q, entry, rates).total > capital)) q -= step;
-  if (q <= 0) return empty;
-  return { shares: q, cost: buyCost(q, entry, rates).total, riskAtStop: lossAt(q), limit: byCapital < byRisk ? 'capital' : 'risk' };
+  let limit: PositionPlan['limit'] = byCapital < byRisk ? 'capital' : 'risk';
+  while (q > 0) {
+    const overRisk = lossAt(q) > maxRisk;
+    if (!overRisk && buyCost(q, entry, rates).total <= capital) break;
+    limit = overRisk ? 'risk' : 'capital';
+    q -= step;
+  }
+  if (q <= 0) return none(limit);
+  return { shares: q, cost: buyCost(q, entry, rates).total, riskAtStop: lossAt(q), limit };
 }

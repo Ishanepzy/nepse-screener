@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "NEPSE technical screener: filter listed companies by EMA/SMA crosses, RSI, MACD and other indicators.",
+  "description": "Technical screener for NEPSE stocks",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -4,6 +4,8 @@ import { STAGE_NAMES, type Stage } from '../../shared/analysis.ts';
 import { api } from '../api.ts';
 import * as fmt from '../format.ts';
 import { RsBadge, STAGE_HELP, StageBadge, TrendTemplateBadge } from './Badges.tsx';
+import { StarButton } from './StarButton.tsx';
+import { load, save } from '../storage.ts';
 
 const TURNOVER_OPTIONS = [
   { label: 'Any amount', value: 0 },
@@ -14,13 +16,8 @@ const TURNOVER_OPTIONS = [
 const TURNOVER_KEY = 'nepse.leaders.turnover';
 
 const readTurnover = () => {
-  try {
-    const raw = localStorage.getItem(TURNOVER_KEY);
-    const v = Number(raw);
-    return raw != null && TURNOVER_OPTIONS.some((o) => o.value === v) ? v : 1e6;
-  } catch {
-    return 1e6;
-  }
+  const v = load(TURNOVER_KEY);
+  return TURNOVER_OPTIONS.some((o) => o.value === v) ? (v as number) : 1e6;
 };
 
 interface Props {
@@ -69,11 +66,7 @@ export function LeadersPage({ version, onOpenChart }: Props) {
               onChange={(e) => {
                 const v = Number(e.target.value);
                 setMinTurnover(v);
-                try {
-                  localStorage.setItem(TURNOVER_KEY, String(v));
-                } catch {
-                  /* convenience only */
-                }
+                save(TURNOVER_KEY, v);
               }}
             >
               {TURNOVER_OPTIONS.map((o) => (
@@ -199,8 +192,10 @@ function LeaderTable({ items, onOpen }: { items: LeaderItem[]; onOpen: (symbol: 
     <table>
       <thead>
         <tr>
+          <th className="star-col" aria-label="Watchlist" />
           <th className="left">Symbol</th>
           <th>LTP</th>
+          <th className="hide-sm" title="Change from the previous close, in rupees">Pts</th>
           <th className="hide-sm">Change</th>
           <th title="Relative strength rating, 1–99">RS</th>
           <th title={STAGE_HELP}>Stage</th>
@@ -213,6 +208,9 @@ function LeaderTable({ items, onOpen }: { items: LeaderItem[]; onOpen: (symbol: 
       <tbody>
         {items.map((r) => (
           <tr key={r.symbol} tabIndex={0} onClick={() => onOpen(r.symbol)} onKeyDown={(e) => e.key === 'Enter' && onOpen(r.symbol)}>
+            <td className="star-col">
+              <StarButton symbol={r.symbol} />
+            </td>
             <td className="left">
               <span className="sym">{r.symbol}</span>
               <span className="co" title={r.name}>
@@ -220,6 +218,7 @@ function LeaderTable({ items, onOpen }: { items: LeaderItem[]; onOpen: (symbol: 
               </span>
             </td>
             <td className="mono price">{fmt.price(r.close)}</td>
+            <td className={`mono hide-sm ${tone(r.change)}`}>{fmt.points(r.change)}</td>
             <td className="hide-sm">
               <span className={`pill ${tone(r.changePct)}`}>{fmt.pct(r.changePct)}</span>
             </td>

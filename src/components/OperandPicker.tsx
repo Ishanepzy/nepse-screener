@@ -17,7 +17,7 @@ export function defaultOperand(id: string): Operand {
   return { id: d.id, params: d.params.map((p) => p.default), line: d.lines[0].key };
 }
 
-/** An indicator's number inputs, each with its words around it: `[20] days`, `fast [12]`, `× [2] std dev`. */
+// number inputs with their words around them: [20] days, fast [12]
 export function ParamInputs({ id, params, onChange }: { id: string; params: number[]; onChange: (params: number[]) => void }) {
   const def = getDef(id);
   const isValue = id === 'value';

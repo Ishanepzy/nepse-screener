@@ -1,19 +1,16 @@
-// Trade journal maths: replays buys and sells in date order, matches each sale against the oldest shares still held
-// (first in, first out), and works out profit after fees and capital gains tax.
+// Replays buys and sells in date order. A sale closes the oldest shares first (FIFO).
 import { buyCost, commission, type CostRates } from './costs.ts';
 
 export interface Trade {
   id: string;
-  /** Trade date, YYYY-MM-DD. */
   date: string;
   symbol: string;
   side: 'buy' | 'sell';
   qty: number;
   price: number;
-  /** Planned stop-loss (buys): turns results into R multiples. */
+  // planned stop on a buy; lets results be shown in R
   stop?: number;
   target?: number;
-  /** Setup or strategy tag, e.g. "Stage 2 breakout". */
   setup?: string;
   notes?: string;
 }
@@ -21,36 +18,33 @@ export interface Trade {
 export interface Position {
   symbol: string;
   qty: number;
-  /** Paid for the shares still held, buy fees included. */
+  // includes buy fees
   cost: number;
-  /** Per share, buy fees included. */
   avgCost: number;
   firstDate: string;
-  /** Stop of the most recent buy that set one. */
+  // from the latest buy that set one
   stop?: number;
   setup?: string;
 }
 
 export interface ClosedTrade {
-  /** The sale's trade id. */
+  // id of the sell entry
   id: string;
   symbol: string;
-  /** Earliest buy matched against this sale. */
+  // earliest buy this sale closed
   buyDate: string;
   sellDate: string;
   qty: number;
-  /** Average buy and sell prices (before fees). */
   buyPrice: number;
   sellPrice: number;
-  /** Paid, buy fees included. */
   cost: number;
-  /** Received, after sell fees and capital gains tax. */
+  // after sell fees and tax
   proceeds: number;
   tax: number;
   pnl: number;
   pnlPct: number;
   days: number;
-  /** Price move in units of the planned risk (buy price − stop), when every matched buy had a stop. */
+  // price move / planned risk. null unless every matched buy had a stop.
   r: number | null;
   setup?: string;
 }
@@ -58,7 +52,7 @@ export interface ClosedTrade {
 export interface JournalResult {
   positions: Position[];
   closed: ClosedTrade[];
-  /** Sales larger than the shares held at the time; the extra was left out. */
+  // sales bigger than the holding at the time (the extra is ignored)
   warnings: string[];
 }
 
@@ -75,7 +69,7 @@ const DAY = 86_400_000;
 const daysBetween = (a: string, b: string) => Math.max(0, Math.round((Date.parse(b) - Date.parse(a)) / DAY));
 
 export function replayJournal(trades: Trade[], rates: CostRates, withTax = true): JournalResult {
-  // Date order; same-day entries keep the order they were logged in, so a same-day buy then sell works.
+  // by date; same-day entries keep the order they were logged in, so buy-then-sell on one day works
   const ordered = trades.map((t, i) => ({ t, i })).sort((a, b) => (a.t.date < b.t.date ? -1 : a.t.date > b.t.date ? 1 : a.i - b.i));
   const lots = new Map<string, Lot[]>();
   const closed: ClosedTrade[] = [];
@@ -89,7 +83,7 @@ export function replayJournal(trades: Trade[], rates: CostRates, withTax = true)
       queue.push({ date: t.date, qty: t.qty, price: t.price, costPerShare: buyCost(t.qty, t.price, rates).total / t.qty, stop: t.stop, setup: t.setup });
       continue;
     }
-    // Sell: fees are charged on the whole order, then shared per share across the lots it closes.
+    // sell fees are charged on the whole order, then spread per share over the lots it closes
     const held = queue.reduce((s, l) => s + l.qty, 0);
     const qty = Math.min(t.qty, held);
     if (t.qty > held) warnings.push(`${t.date}: sold ${t.qty} ${t.symbol} but held ${held}; the extra ${t.qty - held} is left out.`);
@@ -98,8 +92,10 @@ export function replayJournal(trades: Trade[], rates: CostRates, withTax = true)
     const feesPerShare = (commission(amount, rates) + (amount * rates.sebonPct) / 100 + rates.dpCharge) / qty;
     let left = qty;
     let cost = 0;
-    let proceeds = 0;
-    let tax = 0;
+    let gross = 0;
+    // gain of the lots held up to a year / longer; losses net against gains of the same sale
+    let gainShort = 0;
+    let gainLong = 0;
     let buyValue = 0;
     let rSum = 0;
     let rQty = 0;
@@ -109,13 +105,11 @@ export function replayJournal(trades: Trade[], rates: CostRates, withTax = true)
       const lot = queue[0];
       const m = Math.min(left, lot.qty);
       const chunkCost = m * lot.costPerShare;
-      const gross = m * (t.price - feesPerShare);
-      const gain = gross - chunkCost;
-      const held = daysBetween(lot.date, t.date);
-      const chunkTax = withTax && gain > 0 ? (gain * (held > 365 ? rates.cgtLongPct : rates.cgtShortPct)) / 100 : 0;
+      const chunkGross = m * (t.price - feesPerShare);
+      if (daysBetween(lot.date, t.date) > 365) gainLong += chunkGross - chunkCost;
+      else gainShort += chunkGross - chunkCost;
       cost += chunkCost;
-      proceeds += gross - chunkTax;
-      tax += chunkTax;
+      gross += chunkGross;
       buyValue += m * lot.price;
       if (lot.stop != null && lot.stop < lot.price) {
         rSum += (m * (t.price - lot.price)) / (lot.price - lot.stop);
@@ -127,6 +121,8 @@ export function replayJournal(trades: Trade[], rates: CostRates, withTax = true)
       left -= m;
       if (lot.qty === 0) queue.shift();
     }
+    const tax = withTax ? (Math.max(0, gainShort) * rates.cgtShortPct + Math.max(0, gainLong) * rates.cgtLongPct) / 100 : 0;
+    const proceeds = gross - tax;
     closed.push({
       id: t.id,
       symbol: t.symbol,
@@ -166,7 +162,7 @@ export interface JournalStats {
   realized: number;
   avgWin: number | null;
   avgLoss: number | null;
-  /** Gross profit ÷ gross loss. */
+  // gross profit / gross loss
   profitFactor: number | null;
   avgR: number | null;
   avgDays: number | null;
@@ -193,7 +189,7 @@ export function journalStats(closed: ClosedTrade[]): JournalStats {
   };
 }
 
-/** Accepts a backup file's content; throws on anything that isn't a list of trades. */
+// Reads a backup file. Throws when it isn't a list of trades.
 export function parseJournal(raw: unknown): Trade[] {
   const list = Array.isArray(raw) ? raw : (raw as { trades?: unknown })?.trades;
   if (!Array.isArray(list)) throw new Error('Not a journal backup');

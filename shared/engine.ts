@@ -1,9 +1,7 @@
-// Everything the UI asks of the data: screening, preset counts, market summary, chart series.
-// Pure and synchronous over an in-memory Dataset, so it runs the same in the browser and in Node.
+// What the UI asks of the data. Synchronous code over an in-memory Dataset, so node --test can run it too.
 import type {
   Bars,
   ChartResponse,
-  ChartSeries,
   Company,
   Condition,
   LeaderItem,
@@ -17,38 +15,29 @@ import type {
   SectorStrength,
   Universe,
 } from './types.ts';
-import { crossIndices, getLine, isCross, normalizeCondition, screenSymbol, type SeriesCache } from './screener.ts';
-import { getDef, normalizeOperand, operandLabel, seriesKey } from './registry.ts';
+import { crossIndices, normalizeCondition, screenSymbol, type SeriesCache } from './screener.ts';
+import { getDef, isStateLine, seriesKey } from './registry.ts';
 import { PRESETS } from './presets.ts';
 import { buildProfiles, type Profile, type Stage } from './analysis.ts';
 
 export interface Dataset {
-  /** Latest session date in the data. */
   asOf: string | null;
-  /** When the data was downloaded (ISO timestamp). */
   builtAt: string | null;
   companies: Map<string, Company>;
   bars: Map<string, Bars>;
-  /** The NEPSE index itself; not a tradeable symbol, so kept out of `bars`. */
+  // the index is not a tradeable symbol, so it stays out of bars
   index: Bars | null;
 }
 
 export interface OverviewItem {
   id: string;
   count: number;
-  /** Most liquid matches, for a quick peek. */
   top: string[];
-}
-
-export interface SectorCount {
-  name: string;
-  count: number;
 }
 
 const SPARK_BARS = 60;
 const OPS = new Set(['crossAbove', 'crossBelow', 'above', 'below', 'rising', 'falling', 'fired']);
 const MAX_CONDITIONS = 12;
-const PLAIN_PRICE = new Set(['close', 'open', 'high', 'low', 'value', 'volume']);
 const NON_EQUITY_SECTORS = /mutual fund|debenture|bond|preferred|preference|promot/i;
 const NON_EQUITY_NAMES = /mutual fund|debenture|\bbond\b|promot[eo]r share|\bfund\b|\bscheme\b|yojana/i;
 
@@ -103,7 +92,7 @@ export class Engine {
     for (const b of ds.bars.values()) b.ix = this.indexCloses(b.t);
   }
 
-  /** The NEPSE index close on or before each date (NaN before the index history starts). */
+  // index close on or before each date
   private indexCloses(dates: string[]): number[] {
     const ix = this.ds.index;
     if (!ix?.t.length) return dates.map(() => NaN);
@@ -122,7 +111,6 @@ export class Engine {
     return c;
   }
 
-  /** Stage, RS rating, trend template and returns of every stock, as of its latest bar. */
   profiles(): Map<string, Profile> {
     if (this.profileMap) return this.profileMap;
     const { asOf } = this.ds;
@@ -167,7 +155,6 @@ export class Engine {
   }
 
   screen(req: ScreenRequest): ScreenResponse {
-    const started = performance.now();
     const conditions = parseConditions(req.conditions);
     const match = req.match === 'any' ? 'any' : 'all';
     const rows: ScreenRow[] = [];
@@ -175,42 +162,59 @@ export class Engine {
     let scanned = 0;
     for (const { symbol, co, bars, turnover } of this.universe(req.universe)) {
       scanned++;
-      // No conditions = every stock that passes the filters (the "All stocks" list).
+      // no conditions = list everything that passes the filters
       const { pass, hits } = conditions.length ? screenSymbol(bars, conditions, match, this.cache(symbol)) : { pass: true, hits: [] };
       if (!pass) continue;
-      const last = bars.c.length - 1;
-      const p = profiles.get(symbol);
-      rows.push({
-        symbol,
-        name: co.name,
-        sector: co.sector ?? 'Unknown',
-        date: bars.t[last],
-        close: bars.c[last],
-        changePct: last > 0 ? ((bars.c[last] - bars.c[last - 1]) / bars.c[last - 1]) * 100 : null,
-        volume: bars.v[last],
-        avgTurnover: Math.round(turnover),
-        spark: bars.c.slice(-SPARK_BARS),
-        hits,
-        rs: p?.rs ?? null,
-        stage: p?.stage ?? null,
-        stageWeeks: p?.stageWeeks ?? 0,
-        tt: p?.tt ?? 0,
-        ttChecks: p?.ttChecks ?? [],
-        fromHigh: pctBelowHigh(bars.c[last], p),
-      });
+      rows.push(this.row(symbol, co, bars, turnover, hits, profiles.get(symbol)));
     }
     if (conditions.length) {
-      // Freshest signal first, then the most liquid.
+      // freshest signal first, then the most liquid
       const freshness = (r: ScreenRow) => Math.min(...r.hits.map((h) => (h.pass && h.barsAgo != null ? h.barsAgo : 999)));
       rows.sort((a, b) => freshness(a) - freshness(b) || b.avgTurnover - a.avgTurnover);
     } else {
-      // A plain list: strongest first.
+      // plain list: strongest first
       rows.sort((a, b) => (b.rs ?? -1) - (a.rs ?? -1) || b.avgTurnover - a.avgTurnover);
     }
-    return { asOf: this.ds.asOf, scanned, rows, tookMs: Math.round(performance.now() - started) };
+    return { asOf: this.ds.asOf, scanned, rows };
   }
 
-  /** Match count for every preset (equities only). */
+  private row(symbol: string, co: Company, bars: Bars, turnover: number, hits: ScreenRow['hits'], p: Profile | undefined): ScreenRow {
+    const last = bars.c.length - 1;
+    const prev = last > 0 ? bars.c[last - 1] : NaN;
+    return {
+      symbol,
+      name: co.name,
+      sector: co.sector ?? 'Unknown',
+      date: bars.t[last],
+      close: bars.c[last],
+      change: prev > 0 ? round(bars.c[last] - prev) : null,
+      changePct: prev > 0 ? ((bars.c[last] - prev) / prev) * 100 : null,
+      volume: bars.v[last],
+      avgTurnover: Math.round(turnover),
+      spark: bars.c.slice(-SPARK_BARS),
+      hits,
+      rs: p?.rs ?? null,
+      stage: p?.stage ?? null,
+      stageWeeks: p?.stageWeeks ?? 0,
+      tt: p?.tt ?? 0,
+      ttChecks: p?.ttChecks ?? [],
+      fromHigh: pctBelowHigh(bars.c[last], p),
+    };
+  }
+
+  // the watchlist: any symbol, in the order given
+  watch(symbols: string[]): ScreenResponse {
+    const profiles = this.profiles();
+    const rows: ScreenRow[] = [];
+    for (const symbol of new Set(symbols)) {
+      const bars = this.ds.bars.get(symbol);
+      const co = this.ds.companies.get(symbol);
+      if (!bars?.c.length || !co) continue;
+      rows.push(this.row(symbol, co, bars, avgTurnover(bars), [], profiles.get(symbol)));
+    }
+    return { asOf: this.ds.asOf, scanned: rows.length, rows };
+  }
+
   overview(): OverviewItem[] {
     this.overviewItems ??= PRESETS.map((p) => {
       const res = this.screen({ conditions: p.conditions, match: p.match, universe: { equityOnly: true, ...p.universe } });
@@ -218,15 +222,6 @@ export class Engine {
       return { id: p.id, count: res.rows.length, top };
     });
     return this.overviewItems;
-  }
-
-  sectors(): SectorCount[] {
-    const counts = new Map<string, number>();
-    for (const s of this.ds.bars.keys()) {
-      const sector = this.ds.companies.get(s)?.sector ?? 'Unknown';
-      counts.set(sector, (counts.get(sector) ?? 0) + 1);
-    }
-    return [...counts].map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   market(): Market {
@@ -258,32 +253,13 @@ export class Engine {
     return this.marketSummary;
   }
 
-  chart(symbolRaw: string, rawConditions: unknown, rawExtra: unknown): ChartResponse {
+  chart(symbolRaw: string, rawConditions: unknown): ChartResponse {
     const symbol = symbolRaw.toUpperCase();
     const bars = this.ds.bars.get(symbol);
     const co = this.ds.companies.get(symbol);
     if (!bars || !co) throw new Error(`No data for ${symbol}`);
     const conditions = parseConditions(rawConditions ?? []);
-    const extra = (Array.isArray(rawExtra) ? rawExtra : []).slice(0, 12).map((o: Operand) => normalizeOperand(o));
     const cache = this.cache(symbol);
-
-    const operands = [...conditions.flatMap((c) => (isCross(c.op) || c.op === 'above' || c.op === 'below' ? [c.left, c.right] : [c.left])), ...extra];
-    const seen = new Set<string>();
-    const series: ChartSeries[] = [];
-    for (const op of operands) {
-      if (PLAIN_PRICE.has(op.id)) continue;
-      const key = `${seriesKey(op)}:${op.line}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const def = getDef(op.id);
-      series.push({
-        key,
-        label: operandLabel(op),
-        pane: def.pane,
-        group: def.pane === 'osc' ? seriesKey(op) : def.pane,
-        values: getLine(bars, op, cache).map((x) => (Number.isFinite(x) ? round(x) : null)),
-      });
-    }
 
     const levels: ChartResponse['levels'] = [];
     for (const c of conditions) {
@@ -298,16 +274,16 @@ export class Engine {
 
     const markers: ChartResponse['markers'] = [];
     conditions.forEach((c, i) => {
+      if (isStateLine(c.left)) return; // e.g. "holding a breakout": the indicator's colour shows it
       for (const idx of crossIndices(bars, c, cache).slice(-80)) {
         markers.push({ date: bars.t[idx], dir: c.op === 'crossBelow' ? 'down' : 'up', text: conditions.length > 1 ? `C${i + 1}` : '' });
       }
     });
     markers.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
-    return { symbol, name: co.name, sector: co.sector ?? 'Unknown', bars, series, levels, markers, profile: this.profiles().get(symbol) ?? null };
+    return { symbol, name: co.name, sector: co.sector ?? 'Unknown', bars, levels, markers, profile: this.profiles().get(symbol) ?? null };
   }
 
-  /** Stage 2 leaders, the stage count, and each sector's strength with its leaders and laggards. */
   leaders(minTurnover?: number): LeadersResponse {
     const profiles = this.profiles();
     const items: LeaderItem[] = [];
@@ -320,6 +296,7 @@ export class Engine {
         name: co.name,
         sector: co.sector ?? 'Unknown',
         close: bars.c[last],
+        change: last > 0 ? round(bars.c[last] - bars.c[last - 1]) : null,
         changePct: last > 0 ? ((bars.c[last] - bars.c[last - 1]) / bars.c[last - 1]) * 100 : null,
         rs: p.rs,
         stage: p.stage,
@@ -340,7 +317,7 @@ export class Engine {
       list.push(it);
     }
     const sectors: SectorStrength[] = [...bySector].map(([sector, list]) => {
-      // Up to 3 each, and never the same stock on both sides: a sector of 3 shows 1 leader and 1 laggard.
+      // up to 3 a side, never the same stock on both: a sector of 3 shows 1 leader and 1 laggard
       const k = Math.min(3, Math.floor(list.length / 2));
       return {
         sector,
@@ -361,10 +338,8 @@ export class Engine {
     };
   }
 
-  /**
-   * Folds the live market feed into the data as the bar for `date`: replaces that day's bar if the data already has
-   * it, or appends it. Returns how many stocks changed; caches built on the old bars are dropped.
-   */
+  // Live quotes become the bar for `date`, replacing it if the data already has that day.
+  // Returns how many stocks changed.
   applyLive(date: string, quotes: LiveQuote[]): number {
     let changed = 0;
     for (const q of quotes) {
@@ -377,7 +352,7 @@ export class Engine {
       const low = Math.min(q.low > 0 ? q.low : q.close, open, q.close);
       const same = b.t[last] === date;
       if (same && b.o[last] === open && b.c[last] === q.close && b.h[last] === high && b.l[last] === low && b.v[last] === q.volume) continue;
-      // New arrays, so anything holding the old bars (an open chart) keeps a consistent copy.
+      // new arrays, so whoever still holds the old bars (an open chart) keeps a consistent copy
       const keep = same ? last : last + 1;
       this.ds.bars.set(q.symbol, {
         t: [...b.t.slice(0, keep), date],

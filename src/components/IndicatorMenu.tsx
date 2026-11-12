@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
 import { getDef } from '../../shared/registry.ts';
 import { CHARTABLE, addIndicator, defaultIndicators, indicatorLabel, type ChartIndicator } from '../chart/indicators.ts';
 import { ParamInputs } from './OperandPicker.tsx';
+import { usePopover } from '../usePopover.ts';
 
 interface Props {
   indicators: ChartIndicator[];
@@ -12,20 +12,7 @@ interface Props {
 }
 
 export function IndicatorMenu({ indicators, onChange, colorOf, showVolume, onShowVolume }: Props) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    document.addEventListener('keydown', close);
-    return () => {
-      document.removeEventListener('mousedown', close);
-      document.removeEventListener('keydown', close);
-    };
-  }, [open]);
+  const { open, setOpen, ref } = usePopover();
 
   return (
     <div className="popover-wrap" ref={ref}>

@@ -1,6 +1,6 @@
-// Indicator math. Series are plain number[] aligned with the bars; NaN marks "not enough data yet".
-// Formulas follow TradingView's built-ins (Wilder smoothing for RSI/ATR/ADX, population stdev for BB)
-// so values line up with what traders see on their charts.
+// Series are number[] lined up with the bars, NaN until there is enough data.
+// Formulas follow TradingView (Wilder smoothing for RSI/ATR/ADX, population stdev for Bollinger),
+// so the numbers match what people see on its charts.
 
 export type Series = number[];
 
@@ -23,7 +23,7 @@ export function sma(src: Series, n: number): Series {
   return out;
 }
 
-/** Exponential average with smoothing `alpha`, seeded by the SMA of the first n valid values. */
+// seeded with the SMA of the first n values, as TradingView does
 function smoothed(src: Series, n: number, alpha: number): Series {
   const out = nanArray(src.length);
   const start = firstValid(src);
@@ -41,7 +41,7 @@ function smoothed(src: Series, n: number, alpha: number): Series {
 
 export const ema = (src: Series, n: number): Series => smoothed(src, n, 2 / (n + 1));
 
-/** Wilder's moving average (a.k.a. RMA / SMMA). */
+// Wilder's average (RMA)
 export const rma = (src: Series, n: number): Series => smoothed(src, n, 1 / n);
 
 export function wma(src: Series, n: number): Series {
@@ -111,7 +111,7 @@ export function trueRange(h: Series, l: Series, c: Series): Series {
 
 export const atr = (h: Series, l: Series, c: Series, n: number): Series => rma(trueRange(h, l, c), n);
 
-/** Highest value over the n bars BEFORE bar i (bar i itself excluded), so "close > prior high" is a breakout. */
+// highest of the n bars before i, not counting i, so close > priorHighest is a breakout
 export function priorHighest(src: Series, n: number): Series {
   const out = nanArray(src.length);
   for (let i = n; i < src.length; i++) {
@@ -167,7 +167,7 @@ export function dmi(h: Series, l: Series, c: Series, n: number, adxSmooth: numbe
   const tr = trueRange(h, l, c);
   tr[0] = NaN; // align with the DM series, which start at bar 1
   const trur = rma(tr, n);
-  // A stock that doesn't move for n bars has trur 0; report 0 rather than letting NaN poison the smoothing.
+  // a stock that doesn't move for n bars has trur 0: report 0 instead of letting NaN into the smoothing
   const pdi = rma(plusDM, n).map((x, i) => (trur[i] === 0 ? 0 : (100 * x) / trur[i]));
   const mdi = rma(minusDM, n).map((x, i) => (trur[i] === 0 ? 0 : (100 * x) / trur[i]));
   const dx = pdi.map((p, i) => {
@@ -177,7 +177,7 @@ export function dmi(h: Series, l: Series, c: Series, n: number, adxSmooth: numbe
   return { adx: rma(dx, adxSmooth), pdi, mdi };
 }
 
-/** TradingView-style Supertrend. dir = +1 in an uptrend (line below price), -1 in a downtrend. */
+// dir is +1 in an uptrend (line under price), -1 in a downtrend
 export function supertrend(h: Series, l: Series, c: Series, n: number, factor: number) {
   const len = c.length;
   const a = atr(h, l, c, n);
@@ -204,20 +204,16 @@ export function supertrend(h: Series, l: Series, c: Series, n: number, factor: n
   return { line, dir };
 }
 
-/** Percent change of close over n bars. */
 export function roc(close: Series, n: number): Series {
   return close.map((x, i) => (i < n ? NaN : ((x - close[i - n]) / close[i - n]) * 100));
 }
 
-/**
- * Close-based breakout of the previous n days' highest high.
- *  - `level`: the highest high of the n bars before each bar (the line drawn on the chart).
- *  - A breakout starts when a close goes above `level`. The level it broke is remembered (`base`).
- *  - While it holds, each further close above `level` (a new n-day high) moves `base` up to the level just broken.
- *  - The breakout holds (`state` = 1) until a close falls back below `base`, the most recent level it broke.
- *  - `signal` = 1 on the first later close above the breakout bar's high (the follow-through), once per breakout.
- *  - `start` = 1 on the bar the breakout started.
- */
+// Breakout of the previous n days' high, judged on closes.
+//   level  = that high (the line on the chart)
+//   start  = 1 on the bar that closes above it
+//   state  = 1 until a close falls back under `base`, the last level broken
+//            (base moves up whenever a close takes out a new n-day high)
+//   signal = 1 on the first later close above the breakout bar's high
 export function breakout(h: Series, c: Series, n: number) {
   const len = c.length;
   const level = priorHighest(h, n);

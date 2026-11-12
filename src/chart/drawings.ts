@@ -1,15 +1,15 @@
-// Lines and shapes drawn on a stock's chart, kept per symbol in the browser.
-// Points are anchored to a trade date (plus a fractional bar offset, so a point can sit to the right of the last
-// bar) rather than to a bar index, because the data window shifts forward every day.
+// Chart drawings, saved per symbol. A point is tied to a trade date plus a bar offset rather than to a bar index,
+// because the data window moves forward every day.
+
+import { load, save } from '../storage.ts';
 
 export type DrawingType = 'trend' | 'ray' | 'hline' | 'rect' | 'fib' | 'measure';
 
 export interface Anchor {
-  /** Trade date of the nearest bar. */
+  // trade date of the nearest bar
   d: string;
-  /** Bars from that date (fractional; beyond the last bar for points in the future). */
+  // bars from that date; fractional, and past the last bar for points in the future
   o: number;
-  /** Price. */
   p: number;
 }
 
@@ -17,7 +17,7 @@ export interface Drawing {
   id: string;
   type: DrawingType;
   a: Anchor;
-  /** Second point; absent for horizontal lines. */
+  // missing for horizontal lines
   b?: Anchor;
 }
 
@@ -35,12 +35,8 @@ export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 const KEY = 'nepse.drawings.v1';
 
 function readAll(): Record<string, Drawing[]> {
-  try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? '{}');
-    return v && typeof v === 'object' ? v : {};
-  } catch {
-    return {};
-  }
+  const v = load(KEY);
+  return v && typeof v === 'object' ? (v as Record<string, Drawing[]>) : {};
 }
 
 export function loadDrawings(symbol: string): Drawing[] {
@@ -49,20 +45,15 @@ export function loadDrawings(symbol: string): Drawing[] {
 }
 
 export function saveDrawings(symbol: string, list: Drawing[]) {
-  try {
-    const all = readAll();
-    if (list.length) all[symbol] = list;
-    else delete all[symbol];
-    localStorage.setItem(KEY, JSON.stringify(all));
-  } catch {
-    /* convenience only */
-  }
+  const all = readAll();
+  if (list.length) all[symbol] = list;
+  else delete all[symbol];
+  save(KEY, all);
 }
 
 let counter = 0;
 export const newId = () => `d${Date.now().toString(36)}${(counter++).toString(36)}`;
 
-/** Converts between anchors and bar positions (logical indexes) for one stock's dates. */
 export class Anchors {
   private index: Map<string, number>;
   private dates: string[];
@@ -72,7 +63,7 @@ export class Anchors {
     this.index = new Map(dates.map((d, i) => [d, i]));
   }
 
-  /** Bar position of an anchor, or null when its date has fallen out of the data window. */
+  // null once the date has dropped out of the data window
   toLogical(a: Anchor): number | null {
     const i = this.index.get(a.d);
     return i == null ? null : i + a.o;

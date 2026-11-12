@@ -4,12 +4,17 @@ const nf0 = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
 export const price = (x: number | null | undefined) => (x == null ? '—' : nf2.format(x));
 export const int = (x: number | null | undefined) => (x == null ? '—' : nf0.format(x));
 
+export function points(x: number | null | undefined): string {
+  if (x == null) return '—';
+  return `${x > 0 ? '+' : x < 0 ? '-' : ''}${nf2.format(Math.abs(x))}`;
+}
+
 export function pct(x: number | null | undefined): string {
   if (x == null) return '—';
   return `${x > 0 ? '+' : ''}${x.toFixed(2)}%`;
 }
 
-/** Nepali convention: lakh (1e5) and crore (1e7). */
+// lakh and crore
 export function npr(x: number | null | undefined): string {
   if (x == null) return '—';
   if (x >= 1e7) return `${(x / 1e7).toFixed(2)} Cr`;
@@ -17,13 +22,12 @@ export function npr(x: number | null | undefined): string {
   return nf0.format(x);
 }
 
-/** Indicator values: up to 2 decimals, compact for big volume-like numbers. */
 export function value(x: number | null | undefined): string {
   if (x == null) return '—';
   const a = Math.abs(x);
   if (a >= 1e5) return npr(x);
   if (a >= 100) return x.toFixed(1);
-  // Small values (a price ÷ index ratio, a MACD histogram) keep up to 4 decimals: 0.2074, but -0.53 not -0.5300.
+  // small values (price/index ratio, MACD histogram) keep up to 4 decimals: 0.2074, but -0.53 rather than -0.5300
   if (a < 1 && a > 0) return x.toFixed(4).replace(/(\.\d{2}\d*?)0+$/, '$1');
   return x.toFixed(2);
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { journalStats, parseJournal, replayJournal, type Trade } from './journal.ts';
 import { DEFAULT_RATES, buyCost } from './costs.ts';
 
-const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-6, `${a} ≉ ${b}`);
+const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
 let n = 0;
 const t = (date: string, side: 'buy' | 'sell', qty: number, price: number, extra: Partial<Trade> = {}): Trade => ({
   id: `x${n++}`,
@@ -54,4 +54,11 @@ test('backups round-trip and bad entries are refused', () => {
   const trades = [t('2026-01-01', 'buy', 10, 100, { setup: 'Breakout' })];
   assert.deepEqual(parseJournal(JSON.parse(JSON.stringify({ v: 1, trades }))), trades.map((x) => ({ ...x, stop: undefined, target: undefined, notes: undefined })));
   assert.throws(() => parseJournal({ trades: [{ symbol: 'X', date: 'soon', side: 'buy', qty: 1, price: 1 }] }));
+});
+
+test('a sale that closes a winning and a losing lot is taxed on the net gain', () => {
+  const r = replayJournal([t('2026-01-01', 'buy', 100, 100), t('2026-01-02', 'buy', 100, 200), t('2026-02-01', 'sell', 200, 150)], DEFAULT_RATES);
+  const c = r.closed[0];
+  assert.equal(c.tax, 0); // +5,000 on one lot, -5,000 on the other, less fees: no gain overall
+  assert.ok(c.pnl < 0 && c.pnl > -400);
 });

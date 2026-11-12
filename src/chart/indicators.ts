@@ -1,19 +1,18 @@
-// The indicators drawn on the chart page: a user-editable list, remembered in the browser. When a chart is opened
-// from a scan, the scan's own indicators are added to it so the signal is visible straight away.
+// Indicators on the chart page: the saved list, plus whatever the open scan uses.
 import type { Bars, Condition } from '../../shared/types.ts';
 import { getDef, normalizeOperand, operandLabel, seriesKey } from '../../shared/registry.ts';
 import { isUnary } from '../../shared/screener.ts';
 import type { Series } from '../../shared/indicators.ts';
+import { load, save } from '../storage.ts';
 
 export interface ChartIndicator {
   uid: string;
   id: string;
   params: number[];
-  /** Palette slot, fixed when added so an indicator keeps its colour when others are removed. */
+  // palette slot, kept for life so colours don't shuffle when another indicator is removed
   slot: number;
 }
 
-/** Things that make sense as a chart overlay or pane (plain prices and fixed numbers don't). */
 export const CHARTABLE: { group: string; ids: string[] }[] = [
   { group: 'Moving averages', ids: ['ema', 'sma', 'wma'] },
   { group: 'Against the market (own panel)', ids: ['ratio'] },
@@ -23,7 +22,6 @@ export const CHARTABLE: { group: string; ids: string[] }[] = [
 ];
 const CHARTABLE_IDS = new Set(CHARTABLE.flatMap((g) => g.ids));
 
-/** Guide lines drawn in an oscillator's panel. */
 export const GUIDES: Record<string, number[]> = { rsi: [70, 30], stoch: [80, 20], adx: [25], macd: [0], roc: [0] };
 
 const KEY = 'nepse.chart.indicators.v1';
@@ -50,7 +48,6 @@ function freeSlot(list: ChartIndicator[]): number {
   return list.length % 8;
 }
 
-/** Adds an indicator with default params unless given. `dedupe` skips it when an identical one is already there. */
 export function addIndicator(list: ChartIndicator[], id: string, params?: number[], dedupe = true): ChartIndicator[] {
   const def = getDef(id);
   const p = params ?? def.params.map((x) => x.default);
@@ -63,27 +60,15 @@ export function defaultIndicators(): ChartIndicator[] {
 }
 
 export function loadIndicators(): ChartIndicator[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const list = JSON.parse(raw) as ChartIndicator[];
-      if (Array.isArray(list)) return list.filter((i) => CHARTABLE_IDS.has(i.id) && Array.isArray(i.params));
-    }
-  } catch {
-    /* storage blocked or corrupt: fall back to defaults */
-  }
-  return defaultIndicators();
+  const list = load(KEY);
+  if (!Array.isArray(list)) return defaultIndicators();
+  return (list as ChartIndicator[]).filter((i) => i && CHARTABLE_IDS.has(i.id) && Array.isArray(i.params));
 }
 
 export function saveIndicators(list: ChartIndicator[]) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(list));
-  } catch {
-    /* convenience only */
-  }
+  save(KEY, list);
 }
 
-/** Adds every indicator a scan's conditions refer to (e.g. EMA 9 and EMA 21 for a 9/21 cross). */
 export function withScanIndicators(list: ChartIndicator[], conditions: Condition[]): ChartIndicator[] {
   let out = list;
   for (const c of conditions) {

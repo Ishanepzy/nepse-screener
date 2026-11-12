@@ -4,8 +4,8 @@ import { atr, sma } from '../../shared/indicators.ts';
 import { weeklyCloses } from '../../shared/analysis.ts';
 import { buyCost, sellProceeds, sizePosition, type CostRates } from '../../shared/costs.ts';
 import { api } from '../api.ts';
-import { pageHash } from '../scan.ts';
 import { NO_COSTS, loadRates, saveRates } from '../costsStore.ts';
+import { load, save } from '../storage.ts';
 import * as fmt from '../format.ts';
 import { NumberField } from './NumberField.tsx';
 import { RatesEditor } from './RatesEditor.tsx';
@@ -21,13 +21,8 @@ interface Saved {
 }
 
 function loadSaved(): Saved {
-  try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? 'null');
-    if (v && typeof v === 'object') return { capital: v.capital ?? 500_000, riskPct: v.riskPct ?? 1, lot: v.lot ?? 1, withCosts: v.withCosts !== false };
-  } catch {
-    /* defaults */
-  }
-  return { capital: 500_000, riskPct: 1, lot: 1, withCosts: true };
+  const v = load(KEY) as Partial<Saved> | null;
+  return { capital: v?.capital ?? 500_000, riskPct: v?.riskPct ?? 1, lot: v?.lot ?? 1, withCosts: v?.withCosts !== false };
 }
 
 interface StopIdea {
@@ -36,7 +31,6 @@ interface StopIdea {
   price: number;
 }
 
-/** Stop-loss ideas below the last close: recent low, volatility, and Weinstein's 30-week average. */
 function stopIdeas(b: Bars): StopIdea[] {
   const n = b.c.length;
   const close = b.c[n - 1];
@@ -51,7 +45,7 @@ function stopIdeas(b: Bars): StopIdea[] {
   return out.filter((x) => x.price > 0 && x.price < close);
 }
 
-/** Lowest sell price that gets back everything paid, fees on both sides included. */
+// lowest sell price that covers the cost, fees on both sides
 function breakeven(qty: number, cost: number, rates: CostRates, entry: number): number {
   let lo = entry * 0.9;
   let hi = entry * 1.2;
@@ -65,40 +59,32 @@ function breakeven(qty: number, cost: number, rates: CostRates, entry: number): 
 
 interface Props {
   symbol: string | null;
+  onSymbol: (symbol: string) => void;
   version: number;
   onOpenChart: (symbol: string) => void;
 }
 
-export function CalculatorPage({ symbol: initialSymbol, version, onOpenChart }: Props) {
+export function CalculatorPage({ symbol: pageSymbol, onSymbol, version, onOpenChart }: Props) {
+  const symbol = pageSymbol ?? '';
   const saved = useMemo(loadSaved, []);
   const [capital, setCapital] = useState<number | null>(saved.capital);
   const [riskPct, setRiskPct] = useState<number | null>(saved.riskPct);
   const [lot, setLot] = useState<number | null>(saved.lot);
   const [withCosts, setWithCosts] = useState(saved.withCosts);
   const [rates, setRatesState] = useState<CostRates>(loadRates);
-  const [symbol, setSymbol] = useState(initialSymbol ?? '');
   const [bars, setBars] = useState<Bars | null>(null);
   const [entry, setEntry] = useState<number | null>(null);
   const [stop, setStop] = useState<number | null>(null);
   const [target, setTarget] = useState<number | null>(null);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(KEY, JSON.stringify({ capital, riskPct, lot, withCosts }));
-    } catch {
-      /* convenience only */
-    }
+    save(KEY, { capital, riskPct, lot, withCosts });
   }, [capital, riskPct, lot, withCosts]);
   const setRates = (r: CostRates) => {
     setRatesState(r);
     saveRates(r);
   };
 
-  useEffect(() => {
-    if (initialSymbol) setSymbol(initialSymbol);
-  }, [initialSymbol]);
-
-  // Picking a stock fills the entry with its last close and offers stop-loss ideas.
   const loadedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!symbol) {
@@ -107,11 +93,11 @@ export function CalculatorPage({ symbol: initialSymbol, version, onOpenChart }: 
     }
     let off = false;
     api
-      .chart(symbol, [], [])
+      .chart(symbol)
       .then((d) => {
         if (off) return;
         setBars(d.bars);
-        // A new stock resets the trade; live price updates for the same stock leave what was typed alone.
+        // a new stock resets the trade; live updates for the same stock leave what was typed alone
         if (loadedFor.current !== symbol) {
           loadedFor.current = symbol;
           setEntry(d.bars.c.at(-1)!);
@@ -135,7 +121,11 @@ export function CalculatorPage({ symbol: initialSymbol, version, onOpenChart }: 
 
   let problem: string | null = null;
   if (entry != null && stop != null && stop >= entry) problem = 'The stop-loss must be below the entry price.';
-  else if (plan && plan.shares === 0 && ready) problem = 'The risk you allow is smaller than the fees and the move to the stop for even one lot. Raise the risk or move the stop closer.';
+  else if (plan && plan.shares === 0 && ready)
+    problem =
+      plan.limit === 'capital'
+        ? "Your capital doesn't cover one lot at this price."
+        : 'The risk you allow is smaller than the fees and the move to the stop for even one lot. Raise the risk or move the stop closer.';
 
   const targets =
     plan && plan.shares > 0 && perShare && perShare > 0
@@ -171,10 +161,7 @@ export function CalculatorPage({ symbol: initialSymbol, version, onOpenChart }: 
             <StockInput
               value={symbol}
               label="Stock"
-              onPick={(s) => {
-                setSymbol(s);
-                history.replaceState(null, '', pageHash('calculator', s));
-              }}
+              onPick={onSymbol}
             />
             {symbol && last != null && (
               <button className="link" onClick={() => onOpenChart(symbol)}>
