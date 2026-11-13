@@ -65,9 +65,13 @@ chart read by eye.
 
 **Trend template.** Minervini's 8 rules: price above the 150 and 200-day averages, 150 above 200, 200-day rising
 for a month, 50 above both, price above the 50, at least 30% above the 52-week low, within 25% of the 52-week
-high, RS 70 or more. On a chart it is a panel of daily bars counting the rules met: green at 8, amber at
-6 or 7, grey below. The legend names the rules a day is missing. Rule 8 needs the RS rating on every past day,
-which is only worked out when the panel is open or a scan uses it.
+high, RS 70 or more.
+
+On a chart, "Trend template" draws his five daily simple averages (10, 20, 50, 150 and 200 days) over the price,
+plus a panel counting the rules met each day: green at 8, amber at 6 or 7, grey below, with the missing rules
+named in the legend. Either half can be removed from the legend on its own. A chart opened from the Trend template
+list shows it straight away. Rule 8 needs the RS rating on every past day, which is only
+worked out when that panel is open or a scan uses it.
 
 **Price / NEPSE.** Close divided by the index close of the same day, in its own panel with its moving average.
 The line turns gold with a dot on every bar where the ratio closes above its highest value of the previous 126

@@ -349,6 +349,7 @@ export function App() {
         <ChartPage
           symbol={chart}
           conditions={page.page === 'screener' ? scan.conditions : []}
+          trendTemplate={page.page === 'screener' && !!scan.universe.trendTemplate}
           theme={theme}
           list={chartList}
           version={version}

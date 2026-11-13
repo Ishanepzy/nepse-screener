@@ -55,6 +55,16 @@ export const INDICATORS: IndicatorDef[] = [
   { id: 'sma', label: 'SMA', short: 'SMA', params: [period(20)], lines: VALUE, pane: 'price', compute: (b, [n]) => one(ta.sma(b.c, n)) },
   { id: 'wma', label: 'WMA', short: 'WMA', params: [period(20)], lines: VALUE, pane: 'price', compute: (b, [n]) => one(ta.wma(b.c, n)) },
   {
+    // Minervini's set of daily simple averages, drawn together on the price
+    id: 'ttma',
+    label: 'Trend template',
+    short: 'Trend template',
+    params: [period(10, 'MA 1', { before: 'MA' }), period(20, 'MA 2', {}), period(50, 'MA 3', {}), period(150, 'MA 4', {}), period(200, 'MA 5', { after: 'days' })],
+    lines: [1, 2, 3, 4, 5].map((k) => ({ key: `ma${k}`, label: `MA ${k}` })),
+    pane: 'price',
+    compute: (b, p) => Object.fromEntries(p.map((n, k) => [`ma${k + 1}`, ta.sma(b.c, n)])),
+  },
+  {
     id: 'bb',
     label: 'Bollinger',
     short: 'BB',
@@ -118,8 +128,8 @@ export const INDICATORS: IndicatorDef[] = [
   },
   {
     id: 'tt',
-    label: 'Trend template',
-    short: 'Trend template',
+    label: 'Trend template rules',
+    short: 'Trend template rules',
     params: [],
     lines: [
       { key: 'score', label: 'Rules met' },
@@ -233,7 +243,8 @@ export const seriesKey = (op: Operand) => `${op.id}(${op.params.join(',')})`;
 export function operandLabel(op: Operand): string {
   const def = getDef(op.id);
   if (def.id === 'value') return formatNumber(op.params[0]);
-  if (def.id === 'tt') return op.line === 'pass' ? 'Trend template met' : op.line === 'score' ? 'Trend template score' : 'Trend template';
+  if (def.id === 'tt') return op.line === 'pass' ? 'Trend template met' : op.line === 'score' ? 'Trend template rules met' : 'Trend template rules';
+  if (def.id === 'ttma') return 'Trend template';
   if (def.id === 'ratio') {
     const [n, h] = op.params;
     if (op.line === 'ma') return `Price/NEPSE ${n}D avg`;

@@ -30,6 +30,7 @@ import {
   loadIndicators,
   saveIndicators,
   withScanIndicators,
+  withTrendTemplate,
   type ChartIndicator,
 } from '../chart/indicators.ts';
 import { IndicatorMenu } from './IndicatorMenu.tsx';
@@ -43,6 +44,9 @@ const PALETTE = {
   light: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'],
   dark: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'],
 };
+// trend template averages 10 / 20 / 50 / 150 / 200 take these colours in order, skipping any another line already
+// uses (the default EMA 20 / 50 are blue and orange). Red comes last: it reads as a falling candle.
+const TT_MA_PREFERRED = [0, 1, 2, 4, 6, 3, 5, 7];
 const RANGES = { '3M': 63, '6M': 125, '1Y': 250, '2Y': 500, All: 0 } as const;
 type Range = keyof typeof RANGES;
 const VOLUME_KEY = 'nepse.chart.volume';
@@ -50,6 +54,8 @@ const VOLUME_KEY = 'nepse.chart.volume';
 interface Props {
   symbol: string;
   conditions: Condition[];
+  // the screen behind this chart only lists stocks meeting the trend template, so show it
+  trendTemplate?: boolean;
   theme: 'light' | 'dark';
   // the list this chart was opened from, for prev / next
   list: string[];
@@ -73,7 +79,7 @@ function applyRange(chart: IChartApi, n: number, r: Range) {
   else chart.timeScale().setVisibleLogicalRange({ from: n - bars, to: n + 3 });
 }
 
-export function ChartPage({ symbol, conditions, theme, list, version, onNavigate, onClose, onSizePosition }: Props) {
+export function ChartPage({ symbol, conditions, trendTemplate = false, theme, list, version, onNavigate, onClose, onSizePosition }: Props) {
   const [data, setData] = useState<ChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<Range>('1Y');
@@ -103,11 +109,12 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
   const transient = useRef(new Set<string>());
   useEffect(() => {
     setIndicatorsState((current) => {
-      const merged = withScanIndicators(current, conditions);
+      let merged = withScanIndicators(current, conditions);
+      if (trendTemplate) merged = withTrendTemplate(merged);
       for (const i of merged) if (!current.includes(i)) transient.current.add(i.uid);
       return merged;
     });
-  }, [condKey]); // `conditions` is a new array on every render
+  }, [condKey, trendTemplate]); // `conditions` is a new array on every render
   const setIndicators = (next: ChartIndicator[]) => {
     setIndicatorsState(next);
     saveIndicators(next.filter((i) => !transient.current.has(i.uid)));
@@ -116,7 +123,12 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
     setShowVolumeState(v);
     save(VOLUME_KEY, v ? 1 : 0);
   };
-  const colorOf = (ind: ChartIndicator, k = 0) => PALETTE[theme][(ind.slot + k) % 8];
+  const maSlots = useMemo(() => {
+    const taken = new Set(indicators.filter((x) => x.id !== 'ttma' && getDef(x.id).pane === 'price').map((x) => x.slot));
+    const free = TT_MA_PREFERRED.filter((s) => !taken.has(s));
+    return [...free, ...TT_MA_PREFERRED].slice(0, 5); // more lines than colours: repeat
+  }, [indicators]);
+  const colorOf = (ind: ChartIndicator, k = 0) => PALETTE[theme][ind.id === 'ttma' ? maSlots[k] : (ind.slot + k) % 8];
   // the trend template needs the RS rating on every bar, which the engine only works out on request
   const withRs = indicators.some((i) => i.id === 'tt');
 
@@ -341,12 +353,14 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
                   ? up
                   : down
                 : colorOf(ind, ind.id === 'bb' || ratio ? 0 : k);
+          // five averages on top of the candles: thin lines, or the price disappears under them
+          const thin = ind.id === 'bb' || ind.id === 'ttma' || (ratio && ln.key !== 'value');
           s = chart.addSeries(
             LineSeries,
             {
               ...scale,
               color,
-              lineWidth: ind.id === 'bb' || (ratio && ln.key !== 'value') ? 1 : 2,
+              lineWidth: thin ? 1 : 2,
               lineStyle: (ind.id === 'bb' && ln.key === 'middle') || (ratio && ln.key === 'ma') ? LineStyle.Dashed : LineStyle.Solid,
               lineType: ind.id === 'hh' || ind.id === 'll' ? LineType.WithSteps : LineType.Simple,
               // a price / index ratio is around 0.1 to 1, so the axis needs 4 decimals
@@ -557,11 +571,20 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
                 const def = getDef(ind.id);
                 return (
                   <div key={ind.uid} className="lg-row lg-ind">
-                    <i className="swatch" style={{ background: colorOf(ind) }} aria-hidden />
+                    {ind.id !== 'ttma' && <i className="swatch" style={{ background: colorOf(ind) }} aria-hidden />}
                     <span>{indicatorLabel(ind)}</span>
                     {lines && ind.id === 'tt' && <TrendTemplateLegend lines={lines} i={i} />}
                     {lines &&
+                      ind.id === 'ttma' &&
+                      ind.params.map((p, k) => (
+                        <span key={k} className="lg-ma">
+                          <i className="swatch" style={{ background: colorOf(ind, k) }} aria-hidden />
+                          MA {p} <b>{fmt.value(Number.isFinite(lines[`ma${k + 1}`][i]) ? lines[`ma${k + 1}`][i] : null)}</b>
+                        </span>
+                      ))}
+                    {lines &&
                       ind.id !== 'tt' &&
+                      ind.id !== 'ttma' &&
                       ind.id !== 'ratio' && // the panel's own axis carries the numbers; the legend just names it
                       def.lines
                         .filter((ln) => !ln.event && !ln.hidden)

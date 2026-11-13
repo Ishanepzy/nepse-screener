@@ -2090,3 +2090,10 @@ td.old-chg {
 .stale-bar b {
   color: var(--neutral);
 }
+
+.lg-ma {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+}
