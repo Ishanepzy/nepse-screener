@@ -15,14 +15,14 @@ export interface ChartIndicator {
 
 export const CHARTABLE: { group: string; ids: string[] }[] = [
   { group: 'Moving averages', ids: ['ema', 'sma', 'wma'] },
-  { group: 'Against the market (own panel)', ids: ['ratio'] },
-  { group: 'Trend & bands', ids: ['bb', 'supertrend', 'hh', 'll', 'breakout'] },
+  { group: 'Strength (own panel)', ids: ['ratio', 'tt'] },
+  { group: 'Trend & bands', ids: ['bb', 'supertrend', 'hh', 'll'] },
   { group: 'Volume', ids: ['volsma'] },
   { group: 'Oscillators (own panel)', ids: ['rsi', 'macd', 'stoch', 'adx', 'atr', 'roc'] },
 ];
 const CHARTABLE_IDS = new Set(CHARTABLE.flatMap((g) => g.ids));
 
-export const GUIDES: Record<string, number[]> = { rsi: [70, 30], stoch: [80, 20], adx: [25], macd: [0], roc: [0] };
+export const GUIDES: Record<string, number[]> = { rsi: [70, 30], stoch: [80, 20], adx: [25], macd: [0], roc: [0], tt: [8] };
 
 const KEY = 'nepse.chart.indicators.v1';
 const DEFAULTS: Omit<ChartIndicator, 'uid' | 'slot'>[] = [

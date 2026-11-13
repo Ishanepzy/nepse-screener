@@ -36,7 +36,8 @@ export const api = {
   overview: async (): Promise<OverviewItem[]> => (await engine()).overview(),
   market: async (): Promise<Market> => (await engine()).market(),
   screen: async (req: ScreenRequest): Promise<ScreenResponse> => (await engine()).screen(req),
-  chart: async (symbol: string, conditions: Condition[] = []): Promise<ChartResponse> => (await engine()).chart(symbol, conditions),
+  chart: async (symbol: string, conditions: Condition[] = [], withRs = false): Promise<ChartResponse> =>
+    (await engine()).chart(symbol, conditions, withRs),
   leaders: async (minTurnover?: number): Promise<LeadersResponse> => (await engine()).leaders(minTurnover),
   watch: async (symbols: string[]): Promise<ScreenResponse> => (await engine()).watch(symbols),
   lastPrices: async (): Promise<Map<string, { close: number; date: string }>> => {

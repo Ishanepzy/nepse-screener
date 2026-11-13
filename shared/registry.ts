@@ -1,5 +1,6 @@
 import type { Bars, Operand } from './types.ts';
 import * as ta from './indicators.ts';
+import { trendTemplateSeries } from './analysis.ts';
 
 export interface ParamDef {
   label: string;
@@ -18,8 +19,10 @@ export interface IndicatorDef {
   short: string;
   params: ParamDef[];
   // The first line is the default. `event` lines are 0/1 flags: conditions test them with "happened" and the chart
-  // shows them as markers. A `state` event stays on for many bars (holding a breakout), so it gets no markers.
-  lines: { key: string; label: string; event?: boolean; state?: boolean }[];
+  // shows them as markers. A `state` event stays on for many bars (all 8 trend template rules met), so it gets
+  // no markers.
+  // `hidden` lines are for scans only and aren't drawn.
+  lines: { key: string; label: string; event?: boolean; state?: boolean; hidden?: boolean }[];
   pane: 'price' | 'volume' | 'osc';
   compute: (b: Bars, p: number[]) => Record<string, ta.Series>;
 }
@@ -92,37 +95,42 @@ export const INDICATORS: IndicatorDef[] = [
     compute: (b, [n]) => one(ta.priorLowest(b.l, n)),
   },
   {
-    id: 'breakout',
-    label: 'Breakout',
-    short: 'Breakout',
-    params: [period(21, 'Days')],
-    lines: [
-      { key: 'level', label: 'Level' },
-      { key: 'start', label: 'Breakout', event: true },
-      { key: 'signal', label: 'Follow-through', event: true },
-      { key: 'state', label: 'Holding', event: true, state: true },
-    ],
-    pane: 'price',
-    compute: (b, [n]) => {
-      const r = ta.breakout(b.h, b.c, n);
-      return { level: r.level, start: r.start, signal: r.signal, state: r.state, base: r.base };
-    },
-  },
-  {
     id: 'ratio',
     label: 'Ratio (price ÷ NEPSE)',
     short: 'Price/NEPSE',
-    params: [period(50, 'Average', { before: 'avg', after: 'days' }), period(250, 'High', { before: 'high of', after: 'days' })],
+    // 126 days (6 months) for the new high: that reproduces the dots of NepseAlpha's "Ratio Relative Strength" on GHL
+    params: [period(50, 'Average', { before: 'avg', after: 'days' }), period(126, 'High', { before: 'new high of', after: 'days' })],
     lines: [
       { key: 'value', label: 'Ratio' },
       { key: 'ma', label: 'Average' },
-      { key: 'high', label: 'Prior high' },
+      { key: 'high', label: 'Prior high', hidden: true },
+      { key: 'newhigh', label: 'New high', event: true },
     ],
     pane: 'osc',
     compute: (b, [n, h]) => {
       // rising = beating the market, whichever way the market itself goes
       const value = b.c.map((c, i) => (b.ix && b.ix[i] > 0 ? c / b.ix[i] : NaN));
-      return { value, ma: ta.sma(value, n), high: ta.priorHighest(value, h) };
+      const high = ta.priorHighest(value, h);
+      // 1 on every bar where the ratio closes above everything in the h bars before it (the dots on the chart)
+      const newhigh = value.map((x, i) => (x > high[i] ? 1 : 0));
+      return { value, ma: ta.sma(value, n), high, newhigh };
+    },
+  },
+  {
+    id: 'tt',
+    label: 'Trend template',
+    short: 'Trend template',
+    params: [],
+    lines: [
+      { key: 'score', label: 'Rules met' },
+      { key: 'pass', label: 'All 8 met', event: true, state: true },
+    ],
+    pane: 'osc',
+    compute: (b) => {
+      const { score, checks } = trendTemplateSeries(b);
+      const out: Record<string, ta.Series> = { score, pass: score.map((x) => (x === 8 ? 1 : 0)) };
+      checks.forEach((c, r) => (out[`r${r}`] = c)); // each rule, for the chart legend
+      return out;
     },
   },
   { id: 'volume', label: 'Volume', short: 'Volume', params: [], lines: VALUE, pane: 'volume', compute: (b) => one(b.v) },
@@ -225,11 +233,13 @@ export const seriesKey = (op: Operand) => `${op.id}(${op.params.join(',')})`;
 export function operandLabel(op: Operand): string {
   const def = getDef(op.id);
   if (def.id === 'value') return formatNumber(op.params[0]);
+  if (def.id === 'tt') return op.line === 'pass' ? 'Trend template met' : op.line === 'score' ? 'Trend template score' : 'Trend template';
   if (def.id === 'ratio') {
     const [n, h] = op.params;
     if (op.line === 'ma') return `Price/NEPSE ${n}D avg`;
     if (op.line === 'high') return `Price/NEPSE ${h === 250 ? '52W' : `${h}D`} high`;
-    return op.line ? 'Price/NEPSE' : `Price/NEPSE (avg ${n}, high ${h})`;
+    if (op.line === 'newhigh') return `Price/NEPSE new ${h === 250 ? '52W' : `${h}D`} high`;
+    return 'Price/NEPSE';
   }
   if (def.id === 'hh' || def.id === 'll') {
     const n = op.params[0];

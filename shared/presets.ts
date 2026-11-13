@@ -32,8 +32,6 @@ const is = (left: Operand, rel: 'above' | 'below', right: Operand, factor = 1): 
   within: 1,
 });
 
-const happened = (left: Operand, within: number): Condition => ({ left, op: 'fired', right: num(0), within });
-
 const MACD = [12, 26, 9];
 
 export const PRESETS: Preset[] = [
@@ -63,22 +61,6 @@ export const PRESETS: Preset[] = [
     match: 'all',
     conditions: [],
     universe: { stages: [2], minRs: 80 },
-  },
-  {
-    id: 'breakout-21',
-    name: '21-day breakout',
-    description: "Closed above the previous 21 days' highest high in the last 3 sessions, and hasn't fallen back below it.",
-    bias: 'bull',
-    match: 'all',
-    conditions: [happened(o('breakout', [21], 'start'), 3), happened(o('breakout', [21], 'state'), 1)],
-  },
-  {
-    id: 'breakout-follow',
-    name: 'Breakout follow-through',
-    description: "After a 21-day breakout, a close above the breakout day's high in the last 3 sessions, still holding.",
-    bias: 'bull',
-    match: 'all',
-    conditions: [happened(o('breakout', [21], 'signal'), 3), happened(o('breakout', [21], 'state'), 1)],
   },
   {
     id: 'ema9-21-up',

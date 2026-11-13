@@ -18,7 +18,7 @@ import type {
 import { crossIndices, normalizeCondition, screenSymbol, type SeriesCache } from './screener.ts';
 import { getDef, isStateLine, seriesKey } from './registry.ts';
 import { PRESETS } from './presets.ts';
-import { buildProfiles, type Profile, type Stage } from './analysis.ts';
+import { buildProfiles, rsRatingHistory, rsRatingSeries, type Profile, type Stage } from './analysis.ts';
 
 export interface Dataset {
   asOf: string | null;
@@ -47,6 +47,8 @@ export function isEquity(c: Pick<Company, 'name' | 'sector'>): boolean {
   if (c.sector) return !NON_EQUITY_SECTORS.test(c.sector);
   return !NON_EQUITY_NAMES.test(c.name);
 }
+
+const usesTrendTemplate = (conditions: Condition[]) => conditions.some((c) => c.left.id === 'tt' || c.right.id === 'tt');
 
 export function parseConditions(raw: unknown): Condition[] {
   if (!Array.isArray(raw)) throw new Error('conditions must be an array');
@@ -85,6 +87,11 @@ export class Engine {
   private overviewItems: OverviewItem[] | null = null;
   private marketSummary: Market | null = null;
   private profileMap: Map<string, Profile> | null = null;
+  // RS rating history (b.rs) is only worked out when something needs it: the trend template indicator, or a scan
+  // using it. rsEpoch moves on with every live update; rsAt says which epoch a stock's b.rs belongs to.
+  private rsEpoch = 0;
+  private rsAt = new WeakMap<Bars, number>();
+  private rsAllAt = -1;
   readonly ds: Dataset;
 
   constructor(ds: Dataset) {
@@ -109,6 +116,41 @@ export class Engine {
     let c = this.caches.get(symbol);
     if (!c) this.caches.set(symbol, (c = new Map()));
     return c;
+  }
+
+  private equityBars(): Map<string, Bars> {
+    const out = new Map<string, Bars>();
+    for (const [s, b] of this.ds.bars) {
+      const co = this.ds.companies.get(s);
+      if (co && isEquity(co) && b.c.length) out.set(s, b);
+    }
+    return out;
+  }
+
+  private forgetTrendTemplate(symbol: string) {
+    const c = this.caches.get(symbol);
+    if (c) for (const k of [...c.keys()]) if (k.startsWith('tt(')) c.delete(k);
+  }
+
+  private attachRs(symbol: string) {
+    const b = this.ds.bars.get(symbol);
+    const co = this.ds.companies.get(symbol);
+    if (!b || !co || !isEquity(co) || this.rsAt.get(b) === this.rsEpoch) return;
+    b.rs = rsRatingSeries(symbol, this.equityBars());
+    this.rsAt.set(b, this.rsEpoch);
+    this.forgetTrendTemplate(symbol);
+  }
+
+  private attachRsAll() {
+    if (this.rsAllAt === this.rsEpoch) return;
+    const eq = this.equityBars();
+    const history = rsRatingHistory(eq);
+    for (const [s, b] of eq) {
+      b.rs = history.get(s);
+      this.rsAt.set(b, this.rsEpoch);
+      this.forgetTrendTemplate(s);
+    }
+    this.rsAllAt = this.rsEpoch;
   }
 
   profiles(): Map<string, Profile> {
@@ -157,6 +199,7 @@ export class Engine {
   screen(req: ScreenRequest): ScreenResponse {
     const conditions = parseConditions(req.conditions);
     const match = req.match === 'any' ? 'any' : 'all';
+    if (usesTrendTemplate(conditions)) this.attachRsAll();
     const rows: ScreenRow[] = [];
     const profiles = this.profiles();
     let scanned = 0;
@@ -253,12 +296,14 @@ export class Engine {
     return this.marketSummary;
   }
 
-  chart(symbolRaw: string, rawConditions: unknown): ChartResponse {
+  // withRs: the chart shows the trend template, which needs this stock's RS rating on every bar
+  chart(symbolRaw: string, rawConditions: unknown, withRs = false): ChartResponse {
     const symbol = symbolRaw.toUpperCase();
     const bars = this.ds.bars.get(symbol);
     const co = this.ds.companies.get(symbol);
     if (!bars || !co) throw new Error(`No data for ${symbol}`);
     const conditions = parseConditions(rawConditions ?? []);
+    if (withRs || usesTrendTemplate(conditions)) this.attachRs(symbol);
     const cache = this.cache(symbol);
 
     const levels: ChartResponse['levels'] = [];
@@ -274,7 +319,7 @@ export class Engine {
 
     const markers: ChartResponse['markers'] = [];
     conditions.forEach((c, i) => {
-      if (isStateLine(c.left)) return; // e.g. "holding a breakout": the indicator's colour shows it
+      if (isStateLine(c.left)) return; // e.g. "all 8 rules met": the panel's colour shows it
       for (const idx of crossIndices(bars, c, cache).slice(-80)) {
         markers.push({ date: bars.t[idx], dir: c.op === 'crossBelow' ? 'down' : 'up', text: conditions.length > 1 ? `C${i + 1}` : '' });
       }
@@ -367,6 +412,7 @@ export class Engine {
       changed++;
     }
     if (changed) {
+      this.rsEpoch++;
       if (!this.ds.asOf || date > this.ds.asOf) this.ds.asOf = date;
       this.overviewItems = null;
       this.marketSummary = null;

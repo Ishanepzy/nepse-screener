@@ -15,9 +15,8 @@
   --down: #d1343a;
   --down-soft: #d1343a12;
   --neutral: #c47a00;
-  /* breakout line: violet while waiting, gold while holding. Kept away from candle and MA colours. */
-  --bo-off: #6d4fd8;
-  --bo-on: #b07d00;
+  /* new highs on the ratio panel; kept away from candle and MA colours */
+  --gold: #b07d00;
   --brand-bg: #0f1623;
   --shadow: 0 1px 2px #0f16230a, 0 6px 24px #0f162308;
   --radius: 14px;
@@ -49,8 +48,7 @@
   --down: #ff5c63;
   --down-soft: #ff5c6318;
   --neutral: #f0a630;
-  --bo-off: #a48cff;
-  --bo-on: #ffd23f;
+  --gold: #ffd23f;
   --brand-bg: #1e2633;
   --shadow: none;
   color-scheme: dark;
@@ -2067,11 +2065,6 @@ tr:hover .star,
 }
 td.old-chg {
   opacity: 0.45;
-}
-
-.bo-on {
-  color: var(--bo-on);
-  font-weight: 600;
 }
 
 .crash {

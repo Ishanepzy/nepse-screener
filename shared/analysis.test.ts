@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as ta from './indicators.ts';
-import { buildProfiles, rsRatings, stageHistory, weeklyCloses } from './analysis.ts';
+import { buildProfiles, rsRatingHistory, rsRatingSeries, rsRatings, rsScore, rsScoreSeries, stageHistory, trendTemplateSeries, weeklyCloses } from './analysis.ts';
 import { evaluate, normalizeCondition, crossIndices, type SeriesCache } from './screener.ts';
 import type { Bars } from './types.ts';
 
@@ -17,35 +16,18 @@ function weekdays(closes: number[]): Bars {
   return { t, c: closes, o: closes, h: closes.map((x) => x + 1), l: closes.map((x) => x - 1), v: closes.map(() => 1000) };
 }
 
-test('breakout: starts on a close above the prior high, signals once on follow-through, ends on falling back', () => {
-  //            0   1   2   3   4    5    6    7    8   9
-  const c = [10, 10, 10, 10, 10, 12, 11.5, 11.8, 14, 12.4];
-  const h = c.map((x) => x + 0.5); // bar 5's high = 12.5
-  const r = ta.breakout(h, c, 3);
-  // level at bar 5 = max(h[2..4]) = 10.5; close 12 > 10.5 starts it, broken level 10.5
-  assert.equal(r.level[5], 10.5);
-  assert.deepEqual(r.start, [0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
-  // bars 6-7 close under 12.5 (holding, no signal); bar 8 closes 14 > 12.5: the one signal, and a new 3-day high
-  assert.deepEqual(r.signal, [0, 0, 0, 0, 0, 0, 0, 0, 1, 0]);
-  // bar 8 broke level 12.5 (max high of bars 5-7), so the base moved up to it and bar 9's 12.4 falls back below it
-  assert.equal(r.base[8], 12.5);
-  assert.deepEqual(r.state, [0, 0, 0, 0, 0, 1, 1, 1, 1, 0]);
-  assert.ok(Number.isNaN(r.base[9]));
-  const held = ta.breakout(h, [...c.slice(0, 9), 12.6], 3);
-  assert.equal(held.state[9], 1);
-});
-
-test('"happened" finds the latest event in the window and marks where states begin', () => {
-  const c = [10, 10, 10, 10, 10, 12, 11.5, 13.5, 14, 14.4];
-  const bars: Bars = { t: c.map((_, i) => `2024-01-${String(i + 1).padStart(2, '0')}`), c, o: c, h: c.map((x) => x + 0.5), l: c, v: c };
+test('"happened" finds the latest event in the window, and markers go where a run of them begins', () => {
+  //          0   1   2   3   4   5   6   7   8   9
+  const c = [10, 10, 10, 10, 12, 13, 11, 11, 11, 11];
+  // index flat at 1, so the ratio is the close; new 3-day highs on bars 4 and 5 only
+  const bars: Bars = { t: c.map((_, i) => `2024-01-${String(i + 1).padStart(2, '0')}`), c, o: c, h: c, l: c, v: c, ix: c.map(() => 1) };
   const cache: SeriesCache = new Map();
-  const cond = (line: string, within: number) => normalizeCondition({ left: { id: 'breakout', params: [3], line }, op: 'fired', right: { id: 'value', params: [0] }, within });
-  const hit = evaluate(bars, cond('signal', 3), cache);
+  const cond = (within: number) => normalizeCondition({ left: { id: 'ratio', params: [2, 3], line: 'newhigh' }, op: 'fired', right: { id: 'value', params: [0] }, within });
+  const hit = evaluate(bars, cond(5), cache);
   assert.equal(hit.pass, true);
-  assert.equal(hit.barsAgo, 2);
-  assert.equal(evaluate(bars, cond('signal', 2), cache).pass, false);
-  assert.equal(evaluate(bars, cond('state', 1), cache).pass, true);
-  assert.deepEqual(crossIndices(bars, cond('state', 1), cache), [5]);
+  assert.equal(hit.barsAgo, 4); // bar 5 is the latest
+  assert.equal(evaluate(bars, cond(4), cache).pass, false);
+  assert.deepEqual(crossIndices(bars, cond(5), cache), [4]); // bars 4-5 are one run, marked once
 });
 
 test('weekly closes group Sunday–Saturday weeks, the last close of each', () => {
@@ -100,4 +82,41 @@ test('trend template: a steady uptrend meets all 8 rules, a downtrend few', () =
   assert.equal(p.get('DOWN')!.rs, 1);
   assert.ok(p.get('DOWN')!.tt <= 2);
   assert.equal(p.get('DOWN')!.stage, 4);
+});
+
+test('RS history: one stock at a time gives the same ratings as all at once, and the last bar matches the profile', () => {
+  const mk = (rate: number) => weekdays(Array.from({ length: 320 }, (_, i) => 100 * rate ** i));
+  const tail = (b: Bars, n: number): Bars => ({ t: b.t.slice(-n), o: b.o.slice(-n), h: b.h.slice(-n), l: b.l.slice(-n), c: b.c.slice(-n), v: b.v.slice(-n) });
+  const stocks = new Map([
+    ['FAST', mk(1.004)],
+    ['MID', mk(1.001)],
+    ['FLAT', mk(1)],
+    ['SLOW', mk(0.998)],
+    ['YOUNG', tail(mk(1.003), 120)], // listed recently: rated once it has 3 months of history
+  ]);
+  for (const b of stocks.values()) assert.equal(rsScoreSeries(b).at(-1), rsScore(b) ?? NaN);
+  const all = rsRatingHistory(stocks);
+  for (const s of stocks.keys()) assert.deepEqual(rsRatingSeries(s, stocks), all.get(s), s);
+  const profiles = buildProfiles(new Map([...stocks].map(([s, b]) => [s, { bars: b, ranked: true }])));
+  for (const [s, h] of all) assert.equal(h.at(-1), profiles.get(s)!.rs ?? NaN, s);
+  assert.equal(all.get('FAST')!.at(-1), 99);
+  assert.equal(all.get('SLOW')!.at(-1), 1);
+});
+
+test('trend template per bar ends where the profile does, and needs the RS history for rule 8', () => {
+  const up = weekdays(Array.from({ length: 300 }, (_, i) => 100 * 1.004 ** i));
+  const down = weekdays(Array.from({ length: 300 }, (_, i) => 300 * 0.996 ** i));
+  const stocks = new Map([
+    ['UP', up],
+    ['DOWN', down],
+  ]);
+  assert.equal(trendTemplateSeries(up).score.at(-1), 7); // no RS history yet: rule 8 can't pass
+  const h = rsRatingHistory(stocks);
+  up.rs = h.get('UP');
+  down.rs = h.get('DOWN');
+  const p = buildProfiles(new Map([...stocks].map(([s, b]) => [s, { bars: b, ranked: true }])));
+  assert.equal(trendTemplateSeries(up).score.at(-1), p.get('UP')!.tt);
+  assert.equal(trendTemplateSeries(down).score.at(-1), p.get('DOWN')!.tt);
+  assert.deepEqual(trendTemplateSeries(up).checks.map((c) => c.at(-1)), [1, 1, 1, 1, 1, 1, 1, 1]);
+  assert.equal(trendTemplateSeries(up).score[150], trendTemplateSeries(up).checks.reduce((n, c) => n + c[150], 0));
 });

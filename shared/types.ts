@@ -10,6 +10,8 @@ export interface Bars {
   v: number[];
   // NEPSE index close on each bar date (the last known one where the index has no bar). Set by Engine.
   ix?: number[];
+  // RS rating on each bar date, company shares only. Set by Engine for the trend template indicator.
+  rs?: number[];
 }
 
 export interface Operand {
@@ -18,7 +20,7 @@ export interface Operand {
   line?: string;
 }
 
-// fired = an event line (a breakout, say) was on within the last N bars
+// fired = an event line (a new ratio high, say) was on within the last N bars
 export type Op = 'crossAbove' | 'crossBelow' | 'above' | 'below' | 'rising' | 'falling' | 'fired';
 
 export interface Condition {

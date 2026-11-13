@@ -35,6 +35,7 @@ import {
 import { IndicatorMenu } from './IndicatorMenu.tsx';
 import { RsBadge, StageBadge, TrendTemplateBadge } from './Badges.tsx';
 import { StarButton } from './StarButton.tsx';
+import { TREND_TEMPLATE, TREND_TEMPLATE_SHORT } from '../../shared/analysis.ts';
 import { load, save } from '../storage.ts';
 
 // colour-blind-safe order, checked on both backgrounds
@@ -115,14 +116,15 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
     setShowVolumeState(v);
     save(VOLUME_KEY, v ? 1 : 0);
   };
-  // breakout colours itself (violet, gold while holding); its swatch is the gold
-  const colorOf = (ind: ChartIndicator, k = 0) => (ind.id === 'breakout' ? 'var(--bo-on)' : PALETTE[theme][(ind.slot + k) % 8]);
+  const colorOf = (ind: ChartIndicator, k = 0) => PALETTE[theme][(ind.slot + k) % 8];
+  // the trend template needs the RS rating on every bar, which the engine only works out on request
+  const withRs = indicators.some((i) => i.id === 'tt');
 
   useEffect(() => {
     let off = false;
     setError(null);
     api
-      .chart(symbol, conditions)
+      .chart(symbol, conditions, withRs)
       .then((d) => {
         if (off) return;
         if (d.symbol !== dataRef.current?.symbol) setHover(null);
@@ -136,7 +138,7 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
     return () => {
       off = true;
     };
-  }, [symbol, condKey, version]);
+  }, [symbol, condKey, version, withRs]);
 
   // drawings belong to the stock whose bars are on screen
   const shownSymbol = data?.symbol;
@@ -275,7 +277,7 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
     const m = new Map<string, ReturnType<typeof computeIndicator>>();
     if (dataBars) for (const ind of indicators) m.set(ind.uid, computeIndicator(dataBars, ind));
     return m;
-  }, [dataBars, indicators]);
+  }, [dataBars, dataBars?.rs, indicators]); // rs is added to the same bars when the trend template asks for it
   const levelKey = JSON.stringify(data?.levels ?? []);
 
   useEffect(() => {
@@ -290,16 +292,8 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
           text: m.text,
         }))
       : [];
-    // breakout follow-throughs get a "B", whatever the scan is
-    for (const ind of indicators) {
-      if (ind.id !== 'breakout') continue;
-      const signal = computed.get(ind.uid)?.signal ?? [];
-      const gold = css.getPropertyValue('--bo-on').trim();
-      signal.forEach((s, i) => s > 0 && list.push({ time: data.bars.t[i], position: 'belowBar', color: gold, shape: 'arrowUp', text: 'B' }));
-    }
-    list.sort((a, b) => (String(a.time) < String(b.time) ? -1 : String(a.time) > String(b.time) ? 1 : 0));
     parts.markers.setMarkers(list);
-  }, [parts, data, showSignals, computed]);
+  }, [parts, data, showSignals]);
   useEffect(() => {
     if (!isLive(parts) || !data) return;
     const { chart } = parts;
@@ -323,37 +317,43 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
       const scale = def.pane === 'volume' ? { priceScaleId: 'vol' } : {};
       let first: ISeriesApi<SeriesType> | null = null;
       def.lines.forEach((ln, k) => {
-        if (ln.event) return; // drawn as markers or colour, not as a line
+        if (ln.event || ln.hidden) return; // events show as markers or colour, hidden lines are for scans
         const vals = lines[ln.key];
         let s: ISeriesApi<SeriesType>;
         if (ln.key === 'hist') {
           s = chart.addSeries(HistogramSeries, { ...scale, priceLineVisible: false, lastValueVisible: false }, pane);
           s.setData(bars.t.map((time, i) => (Number.isFinite(vals[i]) ? { time, value: vals[i], color: (vals[i] >= 0 ? up : down) + '88' } : { time })));
+        } else if (ind.id === 'tt') {
+          // rules met per day: green at 8, amber at 6-7, grey below
+          s = chart.addSeries(
+            HistogramSeries,
+            { priceLineVisible: false, lastValueVisible: true, priceFormat: { type: 'price', precision: 0, minMove: 1 } },
+            pane,
+          );
+          const amber = v('--neutral');
+          const grey = v('--muted');
+          s.setData(bars.t.map((time, i) => ({ time, value: vals[i], color: vals[i] === 8 ? up : vals[i] >= 6 ? amber + 'cc' : grey + '66' })));
         } else {
           const ratio = ind.id === 'ratio';
           const color =
-            ind.id === 'breakout'
-              ? v('--bo-off')
-              : ind.id === 'adx' && ln.key !== 'adx'
+            ind.id === 'adx' && ln.key !== 'adx'
                 ? ln.key === 'pdi'
                   ? up
                   : down
-                : ratio && ln.key === 'high'
-                  ? v('--muted')
-                  : colorOf(ind, ind.id === 'bb' || ratio ? 0 : k);
+                : colorOf(ind, ind.id === 'bb' || ratio ? 0 : k);
           s = chart.addSeries(
             LineSeries,
             {
               ...scale,
               color,
               lineWidth: ind.id === 'bb' || (ratio && ln.key !== 'value') ? 1 : 2,
-              // ratio: dashed average, dotted prior high
-              lineStyle: (ind.id === 'bb' && ln.key === 'middle') || (ratio && ln.key === 'ma') ? LineStyle.Dashed : ratio && ln.key === 'high' ? LineStyle.Dotted : LineStyle.Solid,
-              lineType: ind.id === 'hh' || ind.id === 'll' || ind.id === 'breakout' || (ratio && ln.key === 'high') ? LineType.WithSteps : LineType.Simple,
+              lineStyle: (ind.id === 'bb' && ln.key === 'middle') || (ratio && ln.key === 'ma') ? LineStyle.Dashed : LineStyle.Solid,
+              lineType: ind.id === 'hh' || ind.id === 'll' ? LineType.WithSteps : LineType.Simple,
               // a price / index ratio is around 0.1 to 1, so the axis needs 4 decimals
               ...(ratio ? { priceFormat: { type: 'price' as const, precision: 4, minMove: 0.0001 } } : {}),
               priceLineVisible: false,
-              lastValueVisible: true,
+              // the ratio's axis shows the ratio only, not its average as well
+              lastValueVisible: !(ratio && ln.key === 'ma'),
               crosshairMarkerRadius: 3,
             },
             pane,
@@ -364,11 +364,17 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
               if (!Number.isFinite(val)) return { time };
               // supertrend: green under price (support), red over it (resistance)
               if (ind.id === 'supertrend') return { time, value: val, color: bars.c[i] >= val ? up : down };
-              // violet, gold while a breakout holds. Neither is a candle or MA colour, so the line reads over price.
-              if (ind.id === 'breakout') return { time, value: val, color: lines.state[i] > 0 ? v('--bo-on') : v('--bo-off') };
+              // the ratio line turns gold where it closes at a new high
+              if (ratio && ln.key === 'value' && lines.newhigh[i] > 0) return { time, value: val, color: v('--gold') };
               return { time, value: val };
             }),
           );
+          if (ratio && ln.key === 'value') {
+            // ...and each of those bars gets a dot, like the RS line on NepseAlpha
+            const dots: SeriesMarker<Time>[] = [];
+            lines.newhigh.forEach((x, i) => x > 0 && dots.push({ time: bars.t[i], position: 'inBar', shape: 'circle', color: v('--gold'), size: 0.6 }));
+            createSeriesMarkers(s, dots);
+          }
         }
         first ??= s;
         indicatorSeries.current.push(s);
@@ -553,19 +559,17 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
                   <div key={ind.uid} className="lg-row lg-ind">
                     <i className="swatch" style={{ background: colorOf(ind) }} aria-hidden />
                     <span>{indicatorLabel(ind)}</span>
+                    {lines && ind.id === 'tt' && <TrendTemplateLegend lines={lines} i={i} />}
                     {lines &&
+                      ind.id !== 'tt' &&
+                      ind.id !== 'ratio' && // the panel's own axis carries the numbers; the legend just names it
                       def.lines
-                        .filter((ln) => !ln.event)
+                        .filter((ln) => !ln.event && !ln.hidden)
                         .map((ln) => (
                           <b key={ln.key} title={ln.label}>
                             {fmt.value(Number.isFinite(lines[ln.key][i]) ? lines[ln.key][i] : null)}
                           </b>
                         ))}
-                    {lines && ind.id === 'breakout' && (
-                      <span className={lines.state[i] > 0 ? 'bo-on' : 'muted'} title="Holding = closed above the level and hasn't closed back below the level it broke">
-                        {lines.state[i] > 0 ? `holding above ${fmt.price(lines.base[i])}` : 'no breakout'}
-                      </span>
-                    )}
                     <button className="lg-remove" aria-label={`Remove ${indicatorLabel(ind)}`} title="Remove from chart" onClick={() => setIndicators(indicators.filter((x) => x.uid !== ind.uid))}>
                       ×
                     </button>
@@ -583,6 +587,21 @@ export function ChartPage({ symbol, conditions, theme, list, version, onNavigate
         </div>
       </div>
     </div>
+  );
+}
+
+function TrendTemplateLegend({ lines, i }: { lines: Record<string, number[]>; i: number }) {
+  const score = lines.score[i];
+  if (score === 8) return <b className="up">8/8</b>;
+  const missing = TREND_TEMPLATE_SHORT.filter((_, r) => !lines[`r${r}`][i]);
+  const full = TREND_TEMPLATE.filter((_, r) => !lines[`r${r}`][i]);
+  return (
+    <>
+      <b>{score}/8</b>
+      <span className="muted" title={`Not met:\n• ${full.join('\n• ')}`}>
+        missing {missing.join(', ')}
+      </span>
+    </>
   );
 }
 

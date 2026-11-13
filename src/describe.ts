@@ -51,8 +51,8 @@ export function describeOperand(op: Operand): string {
       if (op.line === 'high') return `the highest ${what} of the previous ${p[1] === 250 ? '52 weeks' : `${p[1]} days`}`;
       return what;
     }
-    case 'breakout':
-      return `the ${p[0]}-day breakout level (highest high of the previous ${p[0]} days)`;
+    case 'tt':
+      return op.line === 'pass' ? 'the stock meeting all 8 trend template rules' : 'the number of trend template rules met (out of 8)';
     default:
       return getDef(op.id).label;
   }
@@ -68,11 +68,10 @@ function scaled(op: Operand, factor: number): string {
 const days = (k: number) => (k === 1 ? 'day' : `${k} days`);
 
 function describeEvent(op: Operand): string {
-  const p = op.params?.[0];
-  if (op.id === 'breakout') {
-    if (op.line === 'start') return `The close broke above the previous ${p} days' highest high (a ${p}-day breakout)`;
-    if (op.line === 'signal') return `After a ${p}-day breakout, a close went above the breakout day's high (follow-through)`;
-    if (op.line === 'state') return `The stock was holding a ${p}-day breakout (no close back below the latest level it broke)`;
+  if (op.id === 'tt') return 'The stock met all 8 trend template rules';
+  if (op.id === 'ratio' && op.line === 'newhigh') {
+    const h = op.params?.[1];
+    return `The price ÷ NEPSE ratio closed at a new ${h === 250 ? '52-week' : `${h}-day`} high`;
   }
   return `${getDef(op.id).label} ${op.line ?? ''} happened`;
 }

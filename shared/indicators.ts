@@ -111,7 +111,7 @@ export function trueRange(h: Series, l: Series, c: Series): Series {
 
 export const atr = (h: Series, l: Series, c: Series, n: number): Series => rma(trueRange(h, l, c), n);
 
-// highest of the n bars before i, not counting i, so close > priorHighest is a breakout
+// highest of the n bars before i, not counting i, so close > priorHighest means a new n-day high
 export function priorHighest(src: Series, n: number): Series {
   const out = nanArray(src.length);
   for (let i = n; i < src.length; i++) {
@@ -208,43 +208,3 @@ export function roc(close: Series, n: number): Series {
   return close.map((x, i) => (i < n ? NaN : ((x - close[i - n]) / close[i - n]) * 100));
 }
 
-// Breakout of the previous n days' high, judged on closes.
-//   level  = that high (the line on the chart)
-//   start  = 1 on the bar that closes above it
-//   state  = 1 until a close falls back under `base`, the last level broken
-//            (base moves up whenever a close takes out a new n-day high)
-//   signal = 1 on the first later close above the breakout bar's high
-export function breakout(h: Series, c: Series, n: number) {
-  const len = c.length;
-  const level = priorHighest(h, n);
-  const state = new Array<number>(len).fill(0);
-  const start = new Array<number>(len).fill(0);
-  const signal = new Array<number>(len).fill(0);
-  const base = nanArray(len);
-  let active = false;
-  let broke = NaN;
-  let barHigh = NaN;
-  let signaled = false;
-  for (let i = 0; i < len; i++) {
-    if (!active) {
-      if (c[i] > level[i]) {
-        active = true;
-        broke = level[i];
-        barHigh = h[i];
-        signaled = false;
-        start[i] = 1;
-      }
-    } else if (c[i] < broke) {
-      active = false;
-    } else {
-      if (!signaled && c[i] > barHigh) {
-        signal[i] = 1;
-        signaled = true;
-      }
-      if (c[i] > level[i]) broke = level[i];
-    }
-    state[i] = active ? 1 : 0;
-    if (active) base[i] = broke;
-  }
-  return { level, state, start, signal, base };
-}

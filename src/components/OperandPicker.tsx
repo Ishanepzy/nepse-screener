@@ -5,8 +5,8 @@ import { NumInput } from './NumInput.tsx';
 const GROUPS: { label: string; ids: string[] }[] = [
   { label: 'Price', ids: ['close', 'open', 'high', 'low'] },
   { label: 'Moving averages', ids: ['ema', 'sma', 'wma'] },
-  { label: 'Against the market', ids: ['ratio'] },
-  { label: 'Trend & bands', ids: ['supertrend', 'bb', 'hh', 'll', 'breakout'] },
+  { label: 'Strength', ids: ['ratio', 'tt'] },
+  { label: 'Trend & bands', ids: ['supertrend', 'bb', 'hh', 'll'] },
   { label: 'Volume', ids: ['volume', 'volsma'] },
   { label: 'Oscillators', ids: ['rsi', 'macd', 'stoch', 'adx', 'atr', 'roc'] },
   { label: 'Fixed', ids: ['value'] },

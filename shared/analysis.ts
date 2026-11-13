@@ -123,6 +123,121 @@ export function rsScore(b: Bars): number | null {
 }
 
 // percentile rank 1-99, ties share a rank
+// the data has about a thousand distinct dates; parse each once
+const dayCache = new Map<string, number>();
+function dayNo(date: string): number {
+  let d = dayCache.get(date);
+  if (d === undefined) dayCache.set(date, (d = Math.round(Date.parse(date) / DAY)));
+  return d;
+}
+
+// rsScore() at every bar instead of only the last one. Same sums in the same order, so the last value is equal.
+export function rsScoreSeries(b: Bars): number[] {
+  const n = b.c.length;
+  const days = b.t.map(dayNo);
+  const sum = new Float64Array(n);
+  const weight = new Float64Array(n);
+  for (const [span, w] of RS_WEIGHTS) {
+    let j = -1; // last bar on or before `span` days back
+    for (let i = 0; i < n; i++) {
+      while (j + 1 < n && days[j + 1] <= days[i] - span) j++;
+      const then = j >= 0 ? b.c[j] : NaN;
+      if (!(then > 0)) continue;
+      sum[i] += (b.c[i] / then - 1) * 100 * w;
+      weight[i] += w;
+    }
+  }
+  return Array.from(sum, (s, i) => (weight[i] >= 0.4 ? s / weight[i] : NaN));
+}
+
+// RS rating on every trading day, for the trend template's history. Each day ranks the stocks that traded in the
+// 10 days before it. A stock's last bar gets the rating as of the newest date in the data, which is what the
+// profile reports, so the chart and the badges agree.
+const scoreCache = new WeakMap<Bars, { score: number[]; day: number[] }>();
+function scored(b: Bars) {
+  let v = scoreCache.get(b);
+  if (!v) scoreCache.set(b, (v = { score: rsScoreSeries(b), day: b.t.map(dayNo) }));
+  return v;
+}
+
+const ratingOf = (rank: number, m: number) => (m === 1 ? 99 : Math.round(1 + (98 * rank) / (m - 1)));
+
+// One stock's RS rating on each of its bars. Counting the stocks below it is enough, no sort, which is what makes
+// this fast enough to run when a chart opens. Same numbers as rsRatingHistory.
+export function rsRatingSeries(target: string, stocks: Map<string, Bars>, staleDays = 10): number[] {
+  const own = stocks.get(target);
+  if (!own?.t.length) return [];
+  const others = [...stocks.values()].map(scored);
+  const me = scored(own);
+  const ptr = new Int32Array(others.length).fill(-1);
+  const lastDay = Math.max(...others.map((o) => o.day.at(-1) ?? -Infinity));
+  const n = own.t.length;
+  const out = new Array<number>(n).fill(NaN);
+  for (let i = 0; i < n; i++) {
+    // the last bar is rated as of the newest date in the data, like the profile
+    const D = i === n - 1 ? lastDay : me.day[i];
+    if (D - me.day[i] > staleDays || !Number.isFinite(me.score[i])) continue;
+    const mine = me.score[i];
+    let below = 0;
+    let equal = 0; // itself included
+    let pool = 0;
+    for (let k = 0; k < others.length; k++) {
+      const o = others[k];
+      while (ptr[k] + 1 < o.day.length && o.day[ptr[k] + 1] <= D) ptr[k]++;
+      const j = ptr[k];
+      if (j < 0 || D - o.day[j] > staleDays) continue;
+      const x = o.score[j];
+      if (!Number.isFinite(x)) continue;
+      pool++;
+      if (x < mine) below++;
+      else if (x === mine) equal++;
+    }
+    out[i] = ratingOf(below + (equal - 1) / 2, pool);
+  }
+  return out;
+}
+
+export function rsRatingHistory(stocks: Map<string, Bars>, staleDays = 10): Map<string, number[]> {
+  const syms = [...stocks.keys()];
+  const K = syms.length;
+  const bars = syms.map((s) => stocks.get(s)!);
+  const scores = bars.map((b) => scored(b).score);
+  const days = bars.map((b) => scored(b).day);
+  const out = bars.map((b) => new Array<number>(b.t.length).fill(NaN));
+  const allDays = [...new Set(days.flat())].sort((a, b) => a - b);
+  const ptr = new Int32Array(K).fill(-1);
+  const inPool = new Uint8Array(K);
+  const members: number[] = [];
+  allDays.forEach((D, d) => {
+    members.length = 0;
+    for (let k = 0; k < K; k++) {
+      const dk = days[k];
+      while (ptr[k] + 1 < dk.length && dk[ptr[k] + 1] <= D) ptr[k]++;
+      const j = ptr[k];
+      inPool[k] = j >= 0 && D - dk[j] <= staleDays && Number.isFinite(scores[k][j]) ? 1 : 0;
+      if (inPool[k]) members.push(k);
+    }
+    const last = d === allDays.length - 1;
+    const score = (k: number) => scores[k][ptr[k]];
+    members.sort((a, b) => score(a) - score(b));
+    // same ranking as rsRatings: ties share the average rank
+    const m = members.length;
+    for (let a = 0; a < m; ) {
+      let b = a;
+      while (b + 1 < m && score(members[b + 1]) === score(members[a])) b++;
+      const rating = ratingOf((a + b) / 2, m);
+      for (let x = a; x <= b; x++) {
+        const k = members[x];
+        if (days[k][ptr[k]] === D || last) out[k][ptr[k]] = rating;
+      }
+      a = b + 1;
+    }
+    // a stock that has stopped trading has no rating today (the profile says the same)
+    if (last) for (let k = 0; k < K; k++) if (!inPool[k] && ptr[k] >= 0) out[k][ptr[k]] = NaN;
+  });
+  return new Map(syms.map((s, k) => [s, out[k]]));
+}
+
 export function rsRatings(scores: Map<string, number>): Map<string, number> {
   const sorted = [...scores].sort((a, b) => a[1] - b[1]);
   const n = sorted.length;
@@ -139,6 +254,9 @@ export function rsRatings(scores: Map<string, number>): Map<string, number> {
 }
 
 // Minervini's trend template. Profile.ttChecks follows this order.
+// Short forms for the chart legend, same order.
+export const TREND_TEMPLATE_SHORT = ['above 150/200', '150 > 200', '200 rising', '50 > 150/200', 'above 50', '30% off low', 'near 52w high', 'RS 70+'];
+
 export const TREND_TEMPLATE = [
   'Price above the 150-day and 200-day averages',
   '150-day average above the 200-day average',
@@ -172,6 +290,48 @@ function trendTemplate(b: Bars, rs: number | null, high52: number | null, low52:
     high52 != null && c >= high52 * 0.75,
     rs != null && rs >= 70,
   ];
+}
+
+// The 8 rules on every bar, for the chart. Rule 8 reads b.rs; without it the score tops out at 7.
+export function trendTemplateSeries(b: Bars): { score: number[]; checks: number[][] } {
+  const n = b.c.length;
+  const s50 = sma(b.c, 50);
+  const s150 = sma(b.c, 150);
+  const s200 = sma(b.c, 200);
+  const hi = rollingExtreme(b.h, YEAR_BARS, (a, x) => a >= x);
+  const lo = rollingExtreme(b.l, YEAR_BARS, (a, x) => a <= x);
+  const checks = TREND_TEMPLATE.map(() => new Array<number>(n).fill(0));
+  const score = new Array<number>(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    const c = b.c[i];
+    const pass = (r: number, ok: boolean) => {
+      if (!ok) return;
+      checks[r][i] = 1;
+      score[i]++;
+    };
+    pass(0, c > s150[i] && c > s200[i]);
+    pass(1, s150[i] > s200[i]);
+    pass(2, i >= MONTH_BARS && s200[i] > s200[i - MONTH_BARS]);
+    pass(3, s50[i] > s150[i] && s50[i] > s200[i]);
+    pass(4, c > s50[i]);
+    pass(5, c >= lo[i] * 1.3);
+    pass(6, c >= hi[i] * 0.75);
+    pass(7, (b.rs?.[i] ?? NaN) >= 70);
+  }
+  return { score, checks };
+}
+
+// Highest (or lowest) of the last n values, today included; fewer while the history is shorter than n.
+function rollingExtreme(src: number[], n: number, keep: (a: number, x: number) => boolean): number[] {
+  const out = new Array<number>(src.length);
+  const q: number[] = []; // indexes, values ordered so q[0] is the extreme
+  for (let i = 0; i < src.length; i++) {
+    while (q.length && !keep(src[q[q.length - 1]], src[i])) q.pop();
+    q.push(i);
+    if (q[0] <= i - n) q.shift();
+    out[i] = src[q[0]];
+  }
+  return out;
 }
 
 export interface ProfileInput {

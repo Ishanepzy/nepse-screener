@@ -4,7 +4,7 @@ Technical screener for stocks listed on the Nepal Stock Exchange.
 
 Live: https://ishanepzy.github.io/nepse-screener/
 
-- scans on EMA/SMA crosses, RSI, MACD, Supertrend, Bollinger, ADX, Stochastic, volume and breakouts, or any mix of
+- scans on EMA/SMA crosses, RSI, MACD, Supertrend, Bollinger, ADX, Stochastic, volume and 52-week breakouts, or any mix of
   your own conditions
 - RS rating, Weinstein stage and Minervini trend template for every stock
 - charts with indicators and drawing tools
@@ -42,7 +42,7 @@ A scan is a list of conditions joined by all/any. A condition compares two sides
 - crosses above / below: within the last N bars, and optionally still true today
 - is above / below: on each of the last N bars
 - is rising / falling: N bars in a row
-- happened: for on/off events such as a breakout
+- happened: for on/off events, such as the ratio making a new high
 
 A side can be a price, a moving average, any of the indicators, the highest high or lowest low of the previous N
 days, volume, or a fixed number. "+ multiplier" scales the right side, e.g. volume above 2 times average volume.
@@ -65,14 +65,13 @@ chart read by eye.
 
 **Trend template.** Minervini's 8 rules: price above the 150 and 200-day averages, 150 above 200, 200-day rising
 for a month, 50 above both, price above the 50, at least 30% above the 52-week low, within 25% of the 52-week
-high, RS 70 or more.
+high, RS 70 or more. On a chart it is a panel of daily bars counting the rules met: green at 8, amber at
+6 or 7, grey below. The legend names the rules a day is missing. Rule 8 needs the RS rating on every past day,
+which is only worked out when the panel is open or a scan uses it.
 
-**Breakout** (21 days by default). The line is the highest high of the previous 21 days. A close above it starts a
-breakout, which holds until a close drops back under the last level broken. The first later close above the
-breakout day's high is marked B.
-
-**Price / NEPSE.** Close divided by the index close of the same day, with its moving average and its high of the
-previous 250 days.
+**Price / NEPSE.** Close divided by the index close of the same day, in its own panel with its moving average.
+The line turns gold with a dot on every bar where the ratio closes above its highest value of the previous 126
+days (6 months), so a run of dots is a stock that keeps outrunning the market. The lookback can be changed.
 
 ## Fees
 
