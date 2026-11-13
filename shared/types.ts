@@ -94,6 +94,8 @@ export interface ScreenResponse {
   asOf: string | null;
   scanned: number;
   rows: ScreenRow[];
+  // how many stocks each sector has among those checked, so a sector's matches can be read as a share of itself
+  sectorSizes: Record<string, number>;
 }
 
 export interface Company {

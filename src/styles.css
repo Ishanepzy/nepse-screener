@@ -983,6 +983,13 @@ td.price {
   background: var(--accent);
   color: #fff;
 }
+.chip-pct {
+  margin-left: 5px;
+  padding-left: 5px;
+  border-left: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  font-weight: 500;
+  opacity: 0.8;
+}
 
 /* ---------- chart page ---------- */
 

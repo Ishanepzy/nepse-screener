@@ -56,6 +56,16 @@ function HitCell({ hit, cond }: { hit: ConditionHit; cond: Condition }) {
 const toneOf = (x: number | null) => (x == null || x === 0 ? '' : x > 0 ? 'up' : 'down');
 const STAGES: Stage[] = [1, 2, 3, 4];
 
+function ChipCount({ count, total, of }: { count: number; total: number; of?: string }) {
+  const pct = total ? (count / total) * 100 : 0;
+  return (
+    <span className="chip-count" title={of ? `${count} of the ${total} ${of} stocks checked` : `${count} of ${total}`}>
+      {count}
+      <span className="chip-pct">{count && pct < 1 ? '<1' : Math.round(pct)}%</span>
+    </span>
+  );
+}
+
 function Skeleton() {
   return (
     <section className="card results" aria-busy="true" aria-label="Loading results">
@@ -116,6 +126,8 @@ export function ResultsTable({
     for (const r of all) if (inSector(r)) m.set(r.stage, (m.get(r.stage) ?? 0) + 1);
     return m;
   }, [result, pickedSectors]);
+  // stage %: share of what the sector chips leave. Sector %: share of that sector's own stocks.
+  const stageTotal = [...stageCounts.values()].reduce((n, c) => n + c, 0);
 
   const rows = useMemo(() => {
     const list = all.filter((r) => inSector(r) && inStage(r) && matchesQuery(r));
@@ -210,7 +222,7 @@ export function ResultsTable({
                 title={STAGE_HELP}
                 onClick={() => onStagesChange(on ? stages.filter((x) => x !== s) : [...stages, s].sort())}
               >
-                {s} · {STAGE_NAMES[s]} <span className="chip-count">{stageCounts.get(s) ?? 0}</span>
+                {s} · {STAGE_NAMES[s]} <ChipCount count={stageCounts.get(s) ?? 0} total={stageTotal} />
               </button>
             );
           })}
@@ -232,7 +244,7 @@ export function ResultsTable({
                 title={on ? 'Click to remove this sector' : 'Show this sector (pick several to combine them)'}
                 onClick={() => onSectorsChange(on ? sectors.filter((s) => s !== name) : [...sectors, name])}
               >
-                {name} <span className="chip-count">{count}</span>
+                {name} <ChipCount count={count} total={result.sectorSizes[name] ?? count} of={name} />
               </button>
             );
           })}

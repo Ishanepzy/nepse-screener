@@ -51,6 +51,9 @@ test('watchlist rows keep the given order, skip unknown symbols, and carry the c
     index: null,
   });
   const r = e.watch(['MF1', 'NOPE', 'AAA']);
+  assert.deepEqual(r.sectorSizes, { 'Hydro Power': 1, 'Mutual Fund': 1 });
+  const listed = e.screen({ match: 'all', conditions: [] });
+  assert.deepEqual(listed.sectorSizes, { 'Hydro Power': 1 }); // funds left out by default, so not counted either
   assert.deepEqual(r.rows.map((x) => x.symbol), ['MF1', 'AAA']); // funds too: the watchlist isn't filtered
   assert.equal(r.rows[1].change, -4.5);
   assert.equal(r.rows[0].change, 0.2);

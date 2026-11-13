@@ -203,8 +203,11 @@ export class Engine {
     const rows: ScreenRow[] = [];
     const profiles = this.profiles();
     let scanned = 0;
+    const sectorSizes: Record<string, number> = {};
     for (const { symbol, co, bars, turnover } of this.universe(req.universe)) {
       scanned++;
+      const sector = co.sector ?? 'Unknown';
+      sectorSizes[sector] = (sectorSizes[sector] ?? 0) + 1;
       // no conditions = list everything that passes the filters
       const { pass, hits } = conditions.length ? screenSymbol(bars, conditions, match, this.cache(symbol)) : { pass: true, hits: [] };
       if (!pass) continue;
@@ -218,7 +221,7 @@ export class Engine {
       // plain list: strongest first
       rows.sort((a, b) => (b.rs ?? -1) - (a.rs ?? -1) || b.avgTurnover - a.avgTurnover);
     }
-    return { asOf: this.ds.asOf, scanned, rows };
+    return { asOf: this.ds.asOf, scanned, rows, sectorSizes };
   }
 
   private row(symbol: string, co: Company, bars: Bars, turnover: number, hits: ScreenRow['hits'], p: Profile | undefined): ScreenRow {
@@ -255,7 +258,13 @@ export class Engine {
       if (!bars?.c.length || !co) continue;
       rows.push(this.row(symbol, co, bars, avgTurnover(bars), [], profiles.get(symbol)));
     }
-    return { asOf: this.ds.asOf, scanned: rows.length, rows };
+    // a watchlist's sectors are measured against everything still trading, funds included
+    const sectorSizes: Record<string, number> = {};
+    for (const { co } of this.universe({ equityOnly: false })) {
+      const sector = co.sector ?? 'Unknown';
+      sectorSizes[sector] = (sectorSizes[sector] ?? 0) + 1;
+    }
+    return { asOf: this.ds.asOf, scanned: rows.length, rows, sectorSizes };
   }
 
   overview(): OverviewItem[] {
