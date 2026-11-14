@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { letterA, letterC, letterI, nextFlight, parseAmount, parseAnnual, parseFundHoldings, parseQuarterSeries, parseTearsheet, quarterProfit, type Fundamentals } from './fundamentals.ts';
+import { caiSeries, letterA, letterC, letterI, quarterPublished, nextFlight, parseAmount, parseAnnual, parseFundHoldings, parseQuarterSeries, parseTearsheet, quarterProfit, type Fundamentals } from './fundamentals.ts';
 
 test('amounts in the units nepsetrading prints', () => {
   assert.equal(parseAmount('2.56 Arba'), 2.56e9);
@@ -133,4 +133,46 @@ test('I: a real mutual fund stake, not shrinking', () => {
   assert.equal(up.ok, true);
   assert.match(up.why, /\+33\.3% since 2026-08-10/);
   assert.equal(letterI({ q: [], a: [] }, '2026-11-14').ok, null);
+});
+
+test('when results were most likely out: a month after the quarter, on the AD calendar', () => {
+  assert.equal(quarterPublished(2082, 1), '2025-11-16'); // Ashoj end 2082 ~ 17 Oct 2025
+  assert.equal(quarterPublished(2082, 4), '2026-08-15'); // Ashad end 2083 ~ 16 Jul 2026
+  assert.equal(quarterPublished(2083, 1), '2026-11-16');
+});
+
+test('C, A and I on each date use only what was out by then', () => {
+  const dates = ['2026-08-01', '2026-08-20', '2026-10-01', '2026-11-13'];
+  const f: Fundamentals = {
+    // Q4 2082/83 (out ~15 Aug 2026) up 50% on Q4 2081/82; Q1 2083/84 (newest, estimated 16 Nov) up 10%
+    q: [
+      [2083, 1, 110],
+      [2082, 4, 400],
+      [2082, 3, 250],
+      [2082, 1, 100],
+      [2081, 4, 300],
+      [2081, 3, 200],
+    ],
+    a: [
+      [2078, 100],
+      [2079, 130],
+      [2080, 170],
+      [2081, 300],
+    ],
+    mf: [['2026-11-10', 30_000]],
+    float: 1_000_000,
+  };
+  const s = caiSeries(f, dates);
+  // 1 Aug: the newest quarter out is Q3 2082/83, whose year-ago quarter isn't in the data
+  assert.ok(Number.isNaN(s.c[0]));
+  // 20 Aug and 1 Oct: Q4 2082/83 is out, +50%
+  assert.deepEqual(s.c.slice(1, 3), [1, 1]);
+  // 13 Nov, the last bar: Q1 2083/84 counts although the estimate says the 16th, and it's only +10%
+  assert.equal(s.c[3], 0);
+  // A holds throughout: up every year, 40%+ a year to 2081/82, then to 2082/83 once its fourth quarter is out
+  assert.ok(s.a.every((x) => x === 1));
+  // I: the reading of 10 Nov stands from 11 Oct; 3% of the public's shares
+  assert.ok(Number.isNaN(s.i[0]) && Number.isNaN(s.i[2]));
+  assert.equal(s.i[3], 1);
+  assert.deepEqual(caiSeries(undefined, dates).c.map(Number.isNaN), [true, true, true, true]);
 });

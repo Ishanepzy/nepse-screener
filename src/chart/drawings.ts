@@ -345,10 +345,12 @@ export const newId = () => `d${Date.now().toString(36)}${(counter++).toString(36
 const DAY = 86_400_000;
 const parse = (d: string) => Date.parse(`${d}T00:00:00Z`);
 const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
-// NEPSE trades Sunday to Thursday. Public holidays aren't known, so dates past the data are a best guess.
+// NEPSE traded Sunday to Thursday until 5 April 2026 and Monday to Friday since. Public holidays aren't known, so
+// dates past the data are a best guess.
+const MON_FRI_FROM = Date.parse('2026-04-06T00:00:00Z');
 const isSession = (t: number) => {
   const w = new Date(t).getUTCDay();
-  return w !== 5 && w !== 6;
+  return t >= MON_FRI_FROM ? w !== 0 && w !== 6 : w !== 5 && w !== 6;
 };
 
 // the date n sessions after `date` (before it, for negative n)

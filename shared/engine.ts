@@ -33,7 +33,7 @@ import {
   type ProfileInput,
   type Stage,
 } from './analysis.ts';
-import type { Fundamentals } from './fundamentals.ts';
+import { caiSeries, type Fundamentals } from './fundamentals.ts';
 
 export interface Dataset {
   asOf: string | null;
@@ -115,9 +115,10 @@ export class Engine {
 
   constructor(ds: Dataset) {
     this.ds = ds;
-    for (const b of ds.bars.values()) {
+    for (const [symbol, b] of ds.bars) {
       b.ix = this.indexCloses(b.t);
       b.mkt = this.indexUptrendOn(b.t);
+      b.cai = caiSeries(ds.fundamentals?.get(symbol), b.t);
     }
   }
 
@@ -501,6 +502,7 @@ export class Engine {
         v: [...b.v.slice(0, keep), q.volume],
         ix: [...(b.ix ?? this.indexCloses(b.t)).slice(0, keep), ...this.indexCloses([date])],
         mkt: [...(b.mkt ?? this.indexUptrendOn(b.t)).slice(0, keep), ...this.indexUptrendOn([date])],
+        cai: caiSeries(this.ds.fundamentals?.get(q.symbol), [...b.t.slice(0, keep), date]),
       });
       this.caches.delete(q.symbol);
       changed++;

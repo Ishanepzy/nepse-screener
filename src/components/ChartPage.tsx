@@ -396,10 +396,10 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, canslim =
           s = chart.addSeries(HistogramSeries, { ...scale, priceLineVisible: false, lastValueVisible: false }, pane);
           s.setData(bars.t.map((time, i) => (Number.isFinite(vals[i]) ? { time, value: vals[i], color: (vals[i] >= 0 ? up : down) + '88' } : { time })));
         } else if (ind.id === 'tt' || ind.id === 'cs') {
-          // rules met per day: green with all of them (8 of the trend template, 4 of CAN SLIM), amber one or two
+          // rules met per day: green with all of them (8 of the trend template, 7 of CAN SLIM), amber one or two
           // short of that, grey below
-          const all = ind.id === 'tt' ? 8 : 4;
-          const near = ind.id === 'tt' ? 6 : 3;
+          const all = ind.id === 'tt' ? 8 : 7;
+          const near = ind.id === 'tt' ? 6 : 5;
           s = chart.addSeries(
             HistogramSeries,
             { priceLineVisible: false, lastValueVisible: true, priceFormat: { type: 'price', precision: 0, minMove: 1 } },
@@ -734,13 +734,12 @@ function TrendTemplateLegend({ lines, i }: { lines: Record<string, number[]>; i:
 
 // the letters met on the hovered day
 function CanSlimLegend({ lines, i }: { lines: Record<string, number[]>; i: number }) {
-  const m = lines.m[i];
-  const missing = (['n', 's', 'l', 'm'] as const).filter((k) => lines[k][i] !== 1).map((k) => k.toUpperCase());
+  const known = (k: string) => (Number.isFinite(lines[k][i]) ? lines[k][i] === 1 : null);
+  const missing = (['c', 'a', 'n', 's', 'l', 'i', 'm'] as const).filter((k) => lines[k][i] !== 1).map((k) => k.toUpperCase());
   return (
     <>
-      <b className={lines.score[i] === 4 ? 'up' : ''}>{lines.score[i]}/4</b>
-      {/* the panel tracks the letters prices answer; C, A and I are the latest filings, in the header */}
-      <CanSlimLetters c={{ c: null, a: null, n: lines.n[i] === 1, s: lines.s[i] === 1, l: lines.l[i] === 1, i: null }} m={Number.isFinite(m) ? m === 1 : null} />
+      <b className={lines.score[i] === 7 ? 'up' : ''}>{lines.score[i]}/7</b>
+      <CanSlimLetters c={{ c: known('c'), a: known('a'), n: lines.n[i] === 1, s: lines.s[i] === 1, l: lines.l[i] === 1, i: known('i') }} m={known('m')} />
       {missing.length > 0 && <span className="muted">missing {missing.join(', ')}</span>}
     </>
   );

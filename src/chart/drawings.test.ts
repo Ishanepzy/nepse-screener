@@ -2,14 +2,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Anchors, addSessions, cleanDrawings, fibExtPrice, fibPrice, migrateV1, positionOutcome, positionStats, roundPrice, sessionsBetween } from './drawings.ts';
 
-// 2026-11-12 is a Thursday: the next session is Sunday the 15th
-test('sessions skip Fridays and Saturdays', () => {
-  assert.equal(addSessions('2026-11-12', 1), '2026-11-15');
-  assert.equal(addSessions('2026-11-15', -1), '2026-11-12');
+test('sessions run Monday to Friday since April 2026, Sunday to Thursday before', () => {
+  // 2026-11-12 is a Thursday, the 13th a Friday, the 16th a Monday
+  assert.equal(addSessions('2026-11-12', 1), '2026-11-13');
+  assert.equal(addSessions('2026-11-13', 1), '2026-11-16');
+  assert.equal(addSessions('2026-11-16', -1), '2026-11-13');
   assert.equal(addSessions('2026-11-10', 5), '2026-11-17');
-  assert.equal(sessionsBetween('2026-11-12', '2026-11-15'), 1);
+  assert.equal(sessionsBetween('2026-11-13', '2026-11-16'), 1);
   assert.equal(sessionsBetween('2026-11-10', '2026-11-17'), 5);
   assert.equal(sessionsBetween('2026-11-17', '2026-11-10'), 0);
+  // the old week: Thursday 12 March 2026 was followed by Sunday the 15th
+  assert.equal(addSessions('2026-03-12', 1), '2026-03-15');
 });
 
 test('anchors round-trip inside the data, past its end and on a day the stock skipped', () => {
@@ -33,7 +36,7 @@ test('a future point stays on its date when a new bar arrives', () => {
   const before = new Anchors(['2026-11-11', '2026-11-12']);
   const anchor = before.fromLogical(3, 50); // two sessions past the 12th: the 16th
   assert.equal(before.dateAt(3), '2026-11-16');
-  const after = new Anchors(['2026-11-11', '2026-11-12', '2026-11-15']);
+  const after = new Anchors(['2026-11-11', '2026-11-12', '2026-11-13']);
   assert.equal(after.dateAt(after.toLogical(anchor)!), '2026-11-16');
 });
 

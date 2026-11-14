@@ -98,8 +98,9 @@ institutions whose holdings NEPSE publishes.
 
 The CAN SLIM list and filter need C, A, N, S, L and I; a letter without data counts as not met. M is shown in the
 market panel, and O'Neil would hold off buying while it is not in an uptrend. On the chart, the CAN SLIM indicator
-draws the 52-week high, the line 15% under it and the 50- and 200-day averages, with a panel of N, S, L and M on
-every day.
+draws the 52-week high, the line 15% under it and the 50- and 200-day averages, with a panel of all seven letters
+on every day. For past days it uses only what was out then: a quarter's results count from a month after the
+quarter ends (SEBON's deadline), and a holdings reading stands for the month before it was taken.
 
 **Relative rotation.** Each stock against the NEPSE index on weekly closes. RS-Ratio (across) is 100 plus the
 z-score of price / index over 10 weeks; RS-Momentum (up) is 100 plus the z-score of RS-Ratio's weekly change over

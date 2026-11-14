@@ -25,7 +25,7 @@ export const CHARTABLE: { group: string; ids: string[] }[] = [
 // the rule panels have no chip of their own (they come with ttma / csma) but can still be on a chart and saved
 const CHARTABLE_IDS = new Set([...CHARTABLE.flatMap((g) => g.ids), 'tt', 'cs']);
 
-export const GUIDES: Record<string, number[]> = { rsi: [70, 30], stoch: [80, 20], adx: [25], macd: [0], roc: [0], tt: [8], cs: [4] };
+export const GUIDES: Record<string, number[]> = { rsi: [70, 30], stoch: [80, 20], adx: [25], macd: [0], roc: [0], tt: [8], cs: [7] };
 
 const KEY = 'nepse.chart.indicators.v1';
 const DEFAULTS: Omit<ChartIndicator, 'uid' | 'slot'>[] = [

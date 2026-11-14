@@ -72,12 +72,13 @@ export function upDownVolume(b: Bars, n = UD_BARS): number | null {
 // highest high of the last 52 weeks on every bar
 export const high52Series = (b: Bars) => rollingExtreme(b.h, YEAR_BARS, (a, x) => a >= x);
 
-// The CAN SLIM letters prices can check, on every bar: 1 = met. L needs b.rs and M needs b.mkt; without them
-// those letters read 0 (and M NaN).
-export function canslimSeries(b: Bars): { score: number[]; n: number[]; s: number[]; l: number[]; m: number[] } {
+// All seven CAN SLIM letters on every bar: 1 = met, 0 = not, NaN = not known on that day. L needs b.rs (without it,
+// 0), M needs b.mkt, and C, A and I need b.cai (without them, NaN). The score counts the letters met.
+export function canslimSeries(b: Bars): { score: number[]; c: number[]; a: number[]; n: number[]; s: number[]; l: number[]; i: number[]; m: number[] } {
   const len = b.c.length;
   const hi = high52Series(b);
-  const out = { score: new Array<number>(len), n: new Array<number>(len), s: new Array<number>(len), l: new Array<number>(len), m: new Array<number>(len) };
+  const arr = () => new Array<number>(len);
+  const out = { score: arr(), c: arr(), a: arr(), n: arr(), s: arr(), l: arr(), i: arr(), m: arr() };
   // signed volume: + on an up day, - on a down day
   const vol = (i: number) => (i < 1 ? 0 : b.c[i] > b.c[i - 1] ? b.v[i] : b.c[i] < b.c[i - 1] ? -b.v[i] : 0);
   let up = 0;
@@ -93,11 +94,17 @@ export function canslimSeries(b: Bars): { score: number[]; n: number[]; s: numbe
     const s = up > down ? 1 : 0;
     const l = (b.rs?.[i] ?? NaN) >= 80 ? 1 : 0;
     const m = b.mkt?.[i] ?? NaN;
+    const c = b.cai?.c[i] ?? NaN;
+    const a = b.cai?.a[i] ?? NaN;
+    const ins = b.cai?.i[i] ?? NaN;
+    out.c[i] = c;
+    out.a[i] = a;
     out.n[i] = n;
     out.s[i] = s;
     out.l[i] = l;
+    out.i[i] = ins;
     out.m[i] = m;
-    out.score[i] = n + s + l + (m === 1 ? 1 : 0);
+    out.score[i] = [c, a, n, s, l, ins, m].filter((x) => x === 1).length;
   }
   return out;
 }

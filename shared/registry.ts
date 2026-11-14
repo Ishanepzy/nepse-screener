@@ -168,14 +168,14 @@ export const INDICATORS: IndicatorDef[] = [
     short: 'CAN SLIM rules',
     params: [],
     lines: [
-      { key: 'score', label: 'Letters met (N, S, L, M)' },
-      { key: 'pass', label: 'N, S, L and M all met', event: true, state: true },
+      { key: 'score', label: 'Letters met, of 7' },
+      { key: 'pass', label: 'All seven met', event: true, state: true },
     ],
     pane: 'osc',
     compute: (b) => {
-      const { score, n, s, l, m } = canslimSeries(b);
+      const { score, c, a, n, s, l, i, m } = canslimSeries(b);
       // each letter too, for the chart legend
-      return { score, pass: score.map((x) => (x === 4 ? 1 : 0)), n, s, l, m };
+      return { score, pass: score.map((x) => (x === 7 ? 1 : 0)), c, a, n, s, l, i, m };
     },
   },
   { id: 'volume', label: 'Volume', short: 'Volume', params: [], lines: VALUE, pane: 'volume', compute: (b) => one(b.v) },

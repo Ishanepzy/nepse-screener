@@ -15,6 +15,8 @@ export interface Bars {
   // CAN SLIM's M on each bar date: 1 when the NEPSE index was in an uptrend, 0 when not, NaN before the index
   // has 200 bars. Set by Engine.
   mkt?: number[];
+  // CAN SLIM's C, A and I as they stood on each bar date (1 / 0 / NaN = not known then). Set by Engine.
+  cai?: { c: number[]; a: number[]; i: number[] };
 }
 
 export interface Operand {

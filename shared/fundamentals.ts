@@ -99,6 +99,60 @@ export function letterI(f: Fundamentals | undefined, today: string): Letter {
   return { ok: big && steady, why: `I: mutual funds hold ${share.toFixed(2)}% of the public's shares${trend} (needs ${I_MIN_PCT}% and not falling)` };
 }
 
+// ---------- C, A and I on every bar, for the chart ----------
+
+const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+// When a quarter's results were most likely out: the quarter's last day plus the month SEBON allows. The fiscal
+// year runs Shrawan to Ashad (mid-July to mid-July), and BS year Y starts in AD year Y - 57.
+export function quarterPublished(fy: number, q: number): string {
+  const ad = fy - 57;
+  const end = [`${ad}-10-17`, `${ad + 1}-01-14`, `${ad + 1}-04-13`, `${ad + 1}-07-16`][q - 1];
+  return addDays(end, 30);
+}
+
+// C, A and I as they stood on each date: 1 met, 0 not, NaN not known then. Results count from the date they were
+// most likely out; the newest one in the data was out by the last date, however late the estimate puts it. A
+// holdings reading reflects the funds' latest monthly reports, so it also stands for the month before it was taken.
+export function caiSeries(f: Fundamentals | undefined, dates: string[]): { c: number[]; a: number[]; i: number[] } {
+  const n = dates.length;
+  const out = { c: new Array<number>(n).fill(NaN), a: new Array<number>(n).fill(NaN), i: new Array<number>(n).fill(NaN) };
+  if (!f || !n) return out;
+  const last = dates[n - 1];
+  const val = (l: Letter) => (l.ok == null ? NaN : l.ok ? 1 : 0);
+  const newestQ = Math.max(...f.q.map((x) => x[0] * 4 + x[1]));
+  const newestA = Math.max(...f.a.map((x) => x[0]));
+  const cap = (d: string, newest: boolean) => (newest && d > last ? last : d);
+  const qOut = f.q.map((x) => cap(quarterPublished(x[0], x[1]), x[0] * 4 + x[1] === newestQ));
+  const aOut = f.a.map((x) => cap(quarterPublished(x[0], 4), x[0] === newestA));
+  // what was out only grows with the date, so the counts name the set
+  let seen = '';
+  let c = NaN;
+  let a = NaN;
+  for (let k = 0; k < n; k++) {
+    const d = dates[k];
+    const q = f.q.filter((_, j) => qOut[j] <= d);
+    const an = f.a.filter((_, j) => aOut[j] <= d);
+    if (`${q.length}|${an.length}` !== seen) {
+      seen = `${q.length}|${an.length}`;
+      c = val(letterC({ q, a: an }));
+      a = val(letterA({ q, a: an }));
+    }
+    out.c[k] = c;
+    out.a[k] = a;
+  }
+  const mf = f.mf ?? [];
+  if (mf.length && f.float) {
+    const from = mf.map(([d]) => addDays(d, -30));
+    for (let k = 0; k < n; k++) {
+      let r = -1;
+      for (let j = 0; j < mf.length; j++) if (from[j] <= dates[k]) r = j;
+      if (r >= 0) out.i[k] = val(letterI({ ...f, mf: mf.slice(0, r + 1) }, mf[r][0]));
+    }
+  }
+  return out;
+}
+
 // ---------- reading the pages ----------
 
 // The data a Next.js page renders, from its self.__next_f.push([1, "..."]) script tags, joined.
