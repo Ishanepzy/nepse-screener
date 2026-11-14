@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { Condition, ConditionHit, ScreenResponse, ScreenRow } from '../../shared/types.ts';
 import { STAGE_NAMES, type Stage } from '../../shared/analysis.ts';
 import { hasWhen, isUnary } from '../../shared/screener.ts';
@@ -239,7 +239,9 @@ export function ResultsTable({
             return (
               <button
                 key={name}
-                className={`chip ${on ? 'on' : ''}`}
+                className={`chip sector-chip ${on ? 'on' : ''}`}
+                // sectors without a colour of their own (funds, debentures) fall back to grey
+                style={{ '--sec': `var(--sec-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}, var(--muted))` } as CSSProperties}
                 aria-pressed={on}
                 title={on ? 'Click to remove this sector' : 'Show this sector (pick several to combine them)'}
                 onClick={() => onSectorsChange(on ? sectors.filter((s) => s !== name) : [...sectors, name])}

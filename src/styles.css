@@ -17,6 +17,19 @@
   --neutral: #c47a00;
   /* new highs on the ratio panel; kept away from candle and MA colours */
   --gold: #b07d00;
+  /* sector chips: one colour per sector; red and green are left out, they mean down and up */
+  --sec-hydropower: #1baf7a;
+  --sec-commercial-banks: #2a78d6;
+  --sec-development-banks: #9d6844;
+  --sec-finance: #697714;
+  --sec-microfinance: #7e5694;
+  --sec-life-insurance: #4a3aa7;
+  --sec-non-life-insurance: #a52d9e;
+  --sec-manufacturing-processing: #eb6834;
+  --sec-trading: #c75ba9;
+  --sec-hotels-tourism: #e87ba4;
+  --sec-investment: #eda100;
+  --sec-others: #8a93a3;
   --brand-bg: #0f1623;
   --shadow: 0 1px 2px #0f16230a, 0 6px 24px #0f162308;
   --radius: 14px;
@@ -49,6 +62,18 @@
   --down-soft: #ff5c6318;
   --neutral: #f0a630;
   --gold: #ffd23f;
+  --sec-hydropower: #199e70;
+  --sec-commercial-banks: #3987e5;
+  --sec-development-banks: #a16d48;
+  --sec-finance: #758425;
+  --sec-microfinance: #9067a7;
+  --sec-life-insurance: #9085e9;
+  --sec-non-life-insurance: #b841b0;
+  --sec-manufacturing-processing: #d95926;
+  --sec-trading: #e97ac9;
+  --sec-hotels-tourism: #d55181;
+  --sec-investment: #c98500;
+  --sec-others: #7d8696;
   --brand-bg: #1e2633;
   --shadow: none;
   color-scheme: dark;
@@ -1645,6 +1670,28 @@ td.price {
 }
 .search {
   width: 220px;
+}
+/* a dot in the chip's colour, picked or not */
+.stage-chip::before,
+.sector-chip::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dot);
+  flex: none;
+}
+.stage-chip {
+  --dot: var(--stage);
+}
+.sector-chip {
+  --dot: var(--sec);
+}
+.sector-chip.on {
+  /* nudged toward the text colour so the lighter hues (amber, pink) still read */
+  color: color-mix(in srgb, var(--sec) 58%, var(--text));
+  background: color-mix(in srgb, var(--sec) 13%, transparent);
+  border-color: color-mix(in srgb, var(--sec) 50%, transparent);
 }
 .stage-chip.on {
   color: var(--stage);
