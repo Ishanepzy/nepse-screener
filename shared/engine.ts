@@ -19,6 +19,7 @@ import type {
 } from './types.ts';
 import { crossIndices, normalizeCondition, screenSymbol, type SeriesCache } from './screener.ts';
 import { getDef, isStateLine, seriesKey } from './registry.ts';
+import { sma } from './indicators.ts';
 import { PRESETS } from './presets.ts';
 import { ROTATION_WEEKS, buildProfiles, quadrantOf, rotationSeries, rsRatingHistory, rsRatingSeries, type Profile, type Stage } from './analysis.ts';
 
@@ -173,7 +174,7 @@ export class Engine {
     const { asOf } = this.ds;
     const sectors = u.sectors?.length ? new Set(u.sectors) : null;
     const stages = u.stages?.length ? new Set<Stage | null>(u.stages) : null;
-    const needProfile = u.trendTemplate || u.minRs != null || stages;
+    const needProfile = u.trendTemplate || u.canslim || u.minRs != null || stages;
     const profiles = needProfile ? this.profiles() : null;
     const maxStale = u.maxStaleDays ?? DEFAULT_STALE_DAYS;
     for (const [symbol, bars] of this.ds.bars) {
@@ -191,6 +192,7 @@ export class Engine {
       if (profiles) {
         const p = profiles.get(symbol);
         if (u.trendTemplate && p?.tt !== 8) continue;
+        if (u.canslim && !(p?.canslim.n && p.canslim.s && p.canslim.l)) continue;
         if (u.minRs != null && !((p?.rs ?? 0) >= u.minRs)) continue;
         if (stages && !stages.has(p?.stage ?? null)) continue;
       }
@@ -246,6 +248,7 @@ export class Engine {
       stageWeeks: p?.stageWeeks ?? 0,
       tt: p?.tt ?? 0,
       ttChecks: p?.ttChecks ?? [],
+      canslim: p?.canslim ?? { n: false, s: false, l: false },
       fromHigh: pctBelowHigh(bars.c[last], p),
     };
   }
@@ -303,7 +306,13 @@ export class Engine {
             spark: ix.c.slice(-SPARK_BARS),
           }
         : null;
-    this.marketSummary = { asOf, index, breadth };
+    let uptrend: boolean | null = null;
+    if (ix && n >= 200) {
+      const s50 = sma(ix.c, 50);
+      const s200 = sma(ix.c, 200);
+      uptrend = ix.c[n - 1] > s50[n - 1] && s50[n - 1] > s200[n - 1];
+    }
+    this.marketSummary = { asOf, index, breadth, uptrend };
     return this.marketSummary;
   }
 

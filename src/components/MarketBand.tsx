@@ -54,6 +54,12 @@ export function MarketBand({ market, live, open }: Props) {
           <span className="muted">No session data yet</span>
         )}
       </div>
+      {market?.uptrend != null && (
+        <div className="mkt-trend" title="CAN SLIM's M: the index above its 50-day average, and the 50-day above the 200-day. O'Neil buys only in an uptrend.">
+          <span className="mkt-label">Market trend</span>
+          <span className={`pill ${market.uptrend ? 'up' : 'down'}`}>{market.uptrend ? 'Uptrend' : 'Not in an uptrend'}</span>
+        </div>
+      )}
       {live && (
         <dl className="mkt-totals" title={`From merolagani's market summary, ${live.date} ${live.time}`}>
           <div>

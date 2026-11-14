@@ -6,7 +6,7 @@ Live: https://ishanepzy.github.io/nepse-screener/
 
 - scans on EMA/SMA crosses, RSI, MACD, Supertrend, Bollinger, ADX, Stochastic, volume and 52-week breakouts, or any mix of
   your own conditions
-- RS rating, Weinstein stage and Minervini trend template for every stock
+- RS rating, Weinstein stage, Minervini trend template and the price side of O'Neil's CAN SLIM for every stock
 - charts with indicators and drawing tools
 - relative rotation graph against the NEPSE index
 - watchlist, leaders and laggards by sector, position size calculator, trade journal
@@ -77,6 +77,13 @@ worked out when that panel is open or a scan uses it.
 **Price / NEPSE.** Close divided by the index close of the same day, in its own panel with its moving average.
 The line turns gold with a dot on every bar where the ratio closes above its highest value of the previous 126
 days (6 months), so a run of dots is a stock that keeps outrunning the market. The lookback can be changed.
+
+**CAN SLIM.** William O'Neil's seven letters, as far as prices and volume go: N (within 15% of the 52-week high),
+S (more volume on up days than down days over the last 50 sessions), L (RS rating 80 or more) and M (NEPSE above
+its 50-day average, and the 50-day above the 200-day). C and A need quarterly earnings growth and I needs
+institutional holdings; merolagani only shows the latest EPS, not its history, so those three are shown as no data
+rather than guessed. The CAN SLIM list and filter use N, S and L; M is shown in the market panel, and O'Neil would
+hold off buying while it is not in an uptrend.
 
 **Relative rotation.** Each stock against the NEPSE index on weekly closes. RS-Ratio (across) is 100 plus the
 z-score of price / index over 10 weeks; RS-Momentum (up) is 100 plus the z-score of RS-Ratio's weekly change over

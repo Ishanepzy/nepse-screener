@@ -51,6 +51,8 @@ export interface Universe {
   minRs?: number;
   // empty = all
   stages?: Stage[];
+  // N, S and L of CAN SLIM all met
+  canslim?: boolean;
 }
 
 export interface ScreenRequest {
@@ -87,6 +89,7 @@ export interface ScreenRow {
   // trend template: rules met out of 8, and each result in TREND_TEMPLATE order
   tt: number;
   ttChecks: boolean[];
+  canslim: { n: boolean; s: boolean; l: boolean };
   fromHigh: number | null;
 }
 
@@ -128,6 +131,8 @@ export interface Market {
   index: { date: string; close: number; change: number; changePct: number; spark: number[] } | null;
   // equities that traded on asOf
   breadth: { up: number; down: number; flat: number };
+  // CAN SLIM's M: index above its 50-day average and the 50-day above the 200-day. null without enough history.
+  uptrend: boolean | null;
 }
 export interface LeaderItem {
   symbol: string;

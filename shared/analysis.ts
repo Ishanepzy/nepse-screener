@@ -23,6 +23,31 @@ export interface Profile {
   high52: number | null;
   low52: number | null;
   ret: { m1: number | null; m3: number | null; m6: number | null; y1: number | null };
+  // volume on up days / volume on down days, last 50 sessions
+  udVol: number | null;
+  // the CAN SLIM letters price and volume can answer (see CANSLIM)
+  canslim: { n: boolean; s: boolean; l: boolean };
+}
+
+// William O'Neil's CAN SLIM, as far as prices and volume go. C, A (earnings growth) and I (institutional buying)
+// need data this site doesn't have; M is the market itself, the same for every stock (Engine.market).
+export const CANSLIM = {
+  n: 'N: within 15% of its 52-week high',
+  s: 'S: more volume on up days than on down days over the last 50 sessions',
+  l: 'L: RS rating 80 or more',
+  m: 'M: NEPSE in an uptrend (above its 50-day average, and the 50-day above the 200-day)',
+  missing: 'C, A and I need quarterly earnings and institutional holdings, which this site has no data for',
+};
+
+// up-day volume over down-day volume for the last n bars; null when nothing traded down (or at all)
+export function upDownVolume(b: Bars, n = 50): number | null {
+  let up = 0;
+  let down = 0;
+  for (let i = Math.max(1, b.c.length - n); i < b.c.length; i++) {
+    if (b.c[i] > b.c[i - 1]) up += b.v[i];
+    else if (b.c[i] < b.c[i - 1]) down += b.v[i];
+  }
+  return down > 0 ? up / down : null;
 }
 
 const DAY = 86_400_000;
@@ -412,6 +437,12 @@ export function buildProfiles(stocks: Map<string, ProfileInput>): Map<string, Pr
       stageWeeks,
       tt: ttChecks.filter(Boolean).length,
       ttChecks,
+      udVol: upDownVolume(bars),
+      canslim: {
+        n: hi != null && bars.c[n - 1] >= hi * 0.85,
+        s: (upDownVolume(bars) ?? 0) > 1,
+        l: rs != null && rs >= 80,
+      },
       high52: hi,
       low52: lo,
       ret: { m1: returnOver(bars, 30), m3: returnOver(bars, 91), m6: returnOver(bars, 182), y1: returnOver(bars, 365) },

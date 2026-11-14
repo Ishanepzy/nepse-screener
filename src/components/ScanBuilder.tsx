@@ -95,6 +95,13 @@ export function ScanBuilder({ scan, onChange, saved, onSave, onLoadSaved, onDele
           <input type="checkbox" checked={!!u.trendTemplate} onChange={(e) => setUniverse({ trendTemplate: e.target.checked || undefined })} />
           Meets the trend template
         </label>
+        <label
+          className="check"
+          title="William O'Neil's CAN SLIM, the letters prices and volume can check: N (within 15% of the 52-week high), S (more volume on up days than down days over 50 sessions), L (RS rating 80+)"
+        >
+          <input type="checkbox" checked={!!u.canslim} onChange={(e) => setUniverse({ canslim: e.target.checked || undefined })} />
+          Meets CAN SLIM <span className="muted">(N, S, L)</span>
+        </label>
         <label className="field" title="Relative strength rating: how the stock's last 12 months (the latest 3 counted double) rank against every other company share. 99 = stronger than 99% of them.">
           <span>RS rating</span>
           <select value={u.minRs ?? 0} onChange={(e) => setUniverse({ minRs: Number(e.target.value) || undefined })}>

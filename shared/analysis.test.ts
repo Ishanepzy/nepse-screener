@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildProfiles, quadrantOf, rotationSeries, rsRatingHistory, rsRatingSeries, rsRatings, rsScore, rsScoreSeries, stageHistory, trendTemplateSeries, weeklyCloses } from './analysis.ts';
+import { buildProfiles, upDownVolume, quadrantOf, rotationSeries, rsRatingHistory, rsRatingSeries, rsRatings, rsScore, rsScoreSeries, stageHistory, trendTemplateSeries, weeklyCloses } from './analysis.ts';
 import { evaluate, normalizeCondition, crossIndices, type SeriesCache } from './screener.ts';
 import type { Bars } from './types.ts';
 
@@ -135,4 +135,17 @@ test('rotation: a stock that cycles against a flat index turns clockwise through
     const step = (order.indexOf(seen[i]) - order.indexOf(seen[i - 1]) + 4) % 4;
     assert.ok(step === 0 || step === 1, `week ${i}: ${seen[i - 1]} -> ${seen[i]}`);
   }
+});
+
+test('CAN SLIM: up/down volume, and N, S, L on a strong stock and a weak one', () => {
+  // up days on 300 shares, down days on 100
+  const b: Bars = { t: ['a', 'b', 'c', 'd', 'e'], c: [10, 11, 10.5, 11.5, 11], o: [10, 10, 11, 10.5, 11.5], h: [10, 11, 11, 11.5, 11.5], l: [10, 10, 10.5, 10.5, 11], v: [0, 300, 100, 300, 100] };
+  assert.equal(upDownVolume(b), 3);
+  assert.equal(upDownVolume({ ...b, c: [10, 11, 12, 13, 14] }), null); // never fell: no down volume to compare with
+  const up = weekdays(Array.from({ length: 300 }, (_, i) => 100 * 1.004 ** i * (i % 2 ? 1.01 : 1)));
+  up.v = up.c.map((_, i) => (i % 2 ? 2000 : 1000)); // rises on the busy days
+  const down = weekdays(Array.from({ length: 300 }, (_, i) => 300 * 0.996 ** i));
+  const p = buildProfiles(new Map([['UP', { bars: up, ranked: true }], ['DOWN', { bars: down, ranked: true }]]));
+  assert.deepEqual(p.get('UP')!.canslim, { n: true, s: true, l: true });
+  assert.deepEqual(p.get('DOWN')!.canslim, { n: false, s: false, l: false });
 });

@@ -34,7 +34,7 @@ import {
   type ChartIndicator,
 } from '../chart/indicators.ts';
 import { IndicatorMenu } from './IndicatorMenu.tsx';
-import { RsBadge, StageBadge, TrendTemplateBadge } from './Badges.tsx';
+import { CanSlimLetters, RsBadge, StageBadge, TrendTemplateBadge } from './Badges.tsx';
 import { StarButton } from './StarButton.tsx';
 import { TREND_TEMPLATE, TREND_TEMPLATE_SHORT } from '../../shared/analysis.ts';
 import { load, save } from '../storage.ts';
@@ -56,6 +56,8 @@ interface Props {
   conditions: Condition[];
   // the screen behind this chart only lists stocks meeting the trend template, so show it
   trendTemplate?: boolean;
+  // CAN SLIM's M, for the header
+  marketUp?: boolean | null;
   theme: 'light' | 'dark';
   // the list this chart was opened from, for prev / next
   list: string[];
@@ -79,7 +81,7 @@ function applyRange(chart: IChartApi, n: number, r: Range) {
   else chart.timeScale().setVisibleLogicalRange({ from: n - bars, to: n + 3 });
 }
 
-export function ChartPage({ symbol, conditions, trendTemplate = false, theme, list, version, onNavigate, onClose, onSizePosition }: Props) {
+export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp = null, theme, list, version, onNavigate, onClose, onSizePosition }: Props) {
   const [data, setData] = useState<ChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<Range>('1Y');
@@ -462,6 +464,9 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, theme, li
             </span>
             <span className="cp-badge">
               Trend <TrendTemplateBadge tt={data.profile.tt} checks={data.profile.ttChecks} />
+            </span>
+            <span className="cp-badge">
+              <CanSlimLetters c={data.profile.canslim} m={marketUp} />
             </span>
           </div>
         )}

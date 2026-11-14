@@ -95,3 +95,18 @@ test('rotation covers company shares by default, and exactly the symbols asked f
   assert.deepEqual(mine.points.map((p) => p.symbol), ['MF1', 'AAA']);
   assert.ok(mine.points.every((p) => p.tail.length === 7 && p.tail.at(-1)!.x === p.x));
 });
+
+test('market trend (CAN SLIM M) and the CAN SLIM filter', () => {
+  const t = Array.from({ length: 260 }, (_, i) => new Date(Date.UTC(2025, 0, 1) + i * 86_400_000).toISOString().slice(0, 10));
+  const rising = bars(t, t.map((_, i) => 1000 + i));
+  const co = (symbol: string) => ({ symbol, name: symbol, sector: 'Hydro Power', active: true });
+  const mk = (index: Bars) =>
+    new Engine({ asOf: t.at(-1)!, builtAt: null, companies: new Map([['A', co('A')]]), bars: new Map([['A', bars(t, t.map((_, i) => 100 + i))]]), index });
+  assert.equal(mk(rising).market().uptrend, true);
+  assert.equal(mk(bars(t, t.map((_, i) => 2000 - i))).market().uptrend, false);
+  assert.equal(mk(bars(t.slice(-100), t.slice(-100).map(() => 1000))).market().uptrend, null); // under 200 days
+  // A only ever rises, so it never has down volume: S fails and the filter drops it
+  const e = mk(rising);
+  assert.equal(e.screen({ match: 'all', conditions: [], universe: { canslim: true } }).rows.length, 0);
+  assert.equal(e.screen({ match: 'all', conditions: [] }).rows[0].canslim.n, true);
+});

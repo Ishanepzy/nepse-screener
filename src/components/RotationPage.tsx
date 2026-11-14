@@ -4,10 +4,11 @@ import type { Quadrant } from '../../shared/analysis.ts';
 import { api } from '../api.ts';
 import { load, save } from '../storage.ts';
 import { useWatchlist } from '../watchlist.ts';
-import { RsBadge } from './Badges.tsx';
+import { RsBadge, sectorStyle } from './Badges.tsx';
 
 type Scope = 'all' | 'scan' | 'watchlist';
 const SCOPE_KEY = 'nepse.rotation.scope';
+const SECTORS_KEY = 'nepse.rotation.sectors';
 
 // clockwise, the way stocks usually travel
 const QUADRANTS: { id: Quadrant; label: string; help: string }[] = [
@@ -39,6 +40,14 @@ export function RotationPage({ version, onOpenChart, scanSymbols, scanLabel }: P
     setScopeState(s);
     save(SCOPE_KEY, s);
   };
+  const [sectors, setSectorsState] = useState<string[]>(() => {
+    const v = load(SECTORS_KEY);
+    return Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];
+  });
+  const setSectors = (s: string[]) => {
+    setSectorsState(s);
+    save(SECTORS_KEY, s);
+  };
   const [data, setData] = useState<RotationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [focus, setFocus] = useState<Quadrant | null>(null);
@@ -57,7 +66,21 @@ export function RotationPage({ version, onOpenChart, scanSymbols, scanLabel }: P
     };
   }, [key, version]);
 
-  const points = data?.points ?? [];
+  const all = data?.points ?? [];
+  const points = useMemo(() => (sectors.length ? all.filter((p) => sectors.includes(p.sector)) : all), [data, sectors]);
+  // per sector: how many stocks, and how they split across the quadrants (for the chip's tooltip)
+  const bySector = useMemo(() => {
+    const m = new Map<string, Record<Quadrant, number>>();
+    for (const p of all) {
+      const c = m.get(p.sector) ?? { leading: 0, weakening: 0, lagging: 0, improving: 0 };
+      c[p.quadrant]++;
+      m.set(p.sector, c);
+    }
+    // a picked sector with nothing in this scope still gets its chip, or there'd be no way to unpick it
+    for (const s of sectors) if (!m.has(s)) m.set(s, { leading: 0, weakening: 0, lagging: 0, improving: 0 });
+    const total = (c: Record<Quadrant, number>) => c.leading + c.weakening + c.lagging + c.improving;
+    return [...m].map(([name, c]) => ({ name, c, n: total(c) })).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+  }, [data, sectors]);
   const counts = useMemo(() => {
     const c: Record<Quadrant, number> = { leading: 0, weakening: 0, lagging: 0, improving: 0 };
     for (const p of points) c[p.quadrant]++;
@@ -114,6 +137,30 @@ export function RotationPage({ version, onOpenChart, scanSymbols, scanLabel }: P
           </div>
           <input className="search" type="search" placeholder="Find a stock" aria-label="Find a stock on the graph" value={find} onChange={(e) => setFind(e.target.value)} />
         </div>
+        {(bySector.length > 1 || sectors.length > 0) && (
+          <div className="sector-chips rrg-sectors" role="group" aria-label="Show only some sectors">
+            <span className="filters-label">Sector</span>
+            <button className={`chip ${sectors.length === 0 ? 'on' : ''}`} aria-pressed={sectors.length === 0} onClick={() => setSectors([])}>
+              All
+            </button>
+            {bySector.map(({ name, c, n }) => {
+              const on = sectors.includes(name);
+              const split = QUADRANTS.map((x) => `${c[x.id]} ${x.label.toLowerCase()}`).join(', ');
+              return (
+                <button
+                  key={name}
+                  className={`chip sector-chip ${on ? 'on' : ''}`}
+                  style={sectorStyle(name)}
+                  aria-pressed={on}
+                  title={`${name}: ${n} ${n === 1 ? 'stock' : 'stocks'}${n ? ` (${split})` : ''}.\n${on ? 'Click to remove this sector.' : 'Click to show only this sector; pick several to combine them.'}`}
+                  onClick={() => setSectors(on ? sectors.filter((s) => s !== name) : [...sectors, name])}
+                >
+                  {name} <span className="chip-count">{n}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section className="card rrg-card" aria-label="Relative rotation graph">
@@ -121,17 +168,19 @@ export function RotationPage({ version, onOpenChart, scanSymbols, scanLabel }: P
           <p className="notice error">{error}</p>
         ) : !data ? (
           <p className="notice muted">Loading…</p>
+        ) : points.length === 0 && all.length > 0 ? (
+          <p className="notice muted">None of these stocks are in the picked {sectors.length === 1 ? 'sector' : 'sectors'}.</p>
         ) : points.length === 0 ? (
           <p className="notice muted">
             {scope === 'scan' ? 'The screener shows no stocks right now.' : scope === 'watchlist' ? 'Your watchlist is empty.' : 'No stocks to show.'} Stocks
             need about 5 months of history to be placed.
           </p>
         ) : (
-          <RotationChart points={points} focus={focus} found={found?.symbol ?? null} onOpen={(s) => onOpenChart(s, points.map((p) => p.symbol))} />
+          <RotationChart points={points} frame={all} focus={focus} found={found?.symbol ?? null} onOpen={(s) => onOpenChart(s, points.map((p) => p.symbol))} />
         )}
         {data && points.length > 0 && (
           <p className="muted small rrg-note">
-            {points.length} stocks. RS-Ratio and RS-Momentum are 100 + z-scores over {data.weeks} weeks of price ÷ NEPSE. Hover a bubble for its last 6
+            {points.length === all.length ? `${points.length} stocks` : `${points.length} of ${all.length} stocks`}. RS-Ratio and RS-Momentum are 100 + z-scores over {data.weeks} weeks of price ÷ NEPSE. Hover a bubble for its last 6
             weeks; click to open its chart.
           </p>
         )}
@@ -142,7 +191,16 @@ export function RotationPage({ version, onOpenChart, scanSymbols, scanLabel }: P
   );
 }
 
-function RotationChart({ points, focus, found, onOpen }: { points: RotationPoint[]; focus: Quadrant | null; found: string | null; onOpen: (s: string) => void }) {
+interface ChartProps {
+  points: RotationPoint[];
+  // the stocks the axes are sized for: the whole scope, so picking a sector doesn't rescale the graph
+  frame: RotationPoint[];
+  focus: Quadrant | null;
+  found: string | null;
+  onOpen: (s: string) => void;
+}
+
+function RotationChart({ points, frame, focus, found, onOpen }: ChartProps) {
   const wrap = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(900);
   const [hover, setHover] = useState<string | null>(null);
@@ -162,8 +220,8 @@ function RotationChart({ points, focus, found, onOpen }: { points: RotationPoint
     const d = vals.map((v) => Math.abs(v - 100)).sort((a, b) => a - b);
     return Math.max(0.5, (d[Math.floor((d.length - 1) * 0.95)] ?? 1) * 1.15);
   };
-  const sx = span(points.map((p) => p.x));
-  const sy = span(points.map((p) => p.y));
+  const sx = span(frame.map((p) => p.x));
+  const sy = span(frame.map((p) => p.y));
   const clamp = (v: number, s: number) => Math.min(100 + s, Math.max(100 - s, v));
   const X = (v: number) => pad.l + ((clamp(v, sx) - (100 - sx)) / (2 * sx)) * (w - pad.l - pad.r);
   const Y = (v: number) => pad.t + (1 - (clamp(v, sy) - (100 - sy)) / (2 * sy)) * (h - pad.t - pad.b);

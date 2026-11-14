@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Condition, ConditionHit, ScreenResponse, ScreenRow } from '../../shared/types.ts';
 import { STAGE_NAMES, type Stage } from '../../shared/analysis.ts';
 import { hasWhen, isUnary } from '../../shared/screener.ts';
@@ -6,10 +6,10 @@ import { operandLabel } from '../../shared/registry.ts';
 import { api } from '../api.ts';
 import * as fmt from '../format.ts';
 import { Sparkline } from './Sparkline.tsx';
-import { RsBadge, STAGE_HELP, StageBadge, TrendTemplateBadge } from './Badges.tsx';
+import { CanSlimLetters, RsBadge, STAGE_HELP, StageBadge, TrendTemplateBadge, sectorStyle } from './Badges.tsx';
 import { StarButton } from './StarButton.tsx';
 
-type SortKey = 'symbol' | 'sector' | 'close' | 'change' | 'changePct' | 'volume' | 'avgTurnover' | 'rs' | 'stage' | 'tt' | `hit${number}`;
+type SortKey = 'symbol' | 'sector' | 'close' | 'change' | 'changePct' | 'volume' | 'avgTurnover' | 'rs' | 'stage' | 'tt' | 'canslim' | `hit${number}`;
 
 interface Props {
   result: ScreenResponse | null;
@@ -25,6 +25,8 @@ interface Props {
   onStagesChange: (stages: Stage[]) => void;
   // wording after the count when there are no conditions
   listLabel?: string;
+  // CAN SLIM's M: the market's trend, the same for every row
+  marketUp?: boolean | null;
 }
 
 const OP_WORDS = { crossAbove: 'crosses above', crossBelow: 'crosses below', above: 'above', below: 'below', rising: 'rising', falling: 'falling', fired: 'happened' };
@@ -97,6 +99,7 @@ export function ResultsTable({
   stages,
   onStagesChange,
   listLabel = 'listed',
+  marketUp = null,
 }: Props) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null);
   const [query, setQuery] = useState('');
@@ -137,6 +140,7 @@ export function ResultsTable({
         const i = Number(sort.key.slice(3));
         return conditions[i] && r.hits[i] ? hitSortValue(r.hits[i], conditions[i]) : Infinity;
       }
+      if (sort.key === 'canslim') return Number(r.canslim.n) + Number(r.canslim.s) + Number(r.canslim.l);
       const v = r[sort.key as keyof ScreenRow];
       return typeof v === 'number' || typeof v === 'string' ? v : -Infinity;
     };
@@ -240,8 +244,7 @@ export function ResultsTable({
               <button
                 key={name}
                 className={`chip sector-chip ${on ? 'on' : ''}`}
-                // sectors without a colour of their own (funds, debentures) fall back to grey
-                style={{ '--sec': `var(--sec-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}, var(--muted))` } as CSSProperties}
+                style={sectorStyle(name)}
                 aria-pressed={on}
                 title={on ? 'Click to remove this sector' : 'Show this sector (pick several to combine them)'}
                 onClick={() => onSectorsChange(on ? sectors.filter((s) => s !== name) : [...sectors, name])}
@@ -294,6 +297,7 @@ export function ResultsTable({
                 {header('rs', 'RS', 'hide-sm', 'Relative strength rating, 1–99: how the last 12 months rank against every other company share')}
                 {header('stage', 'Stage', 'hide-sm', STAGE_HELP)}
                 {header('tt', 'Trend', 'hide-sm', "Mark Minervini's trend template: how many of its 8 rules the stock meets")}
+                {header('canslim', 'CAN SLIM', 'hide-sm', "William O'Neil's CAN SLIM. Green letters are met; C, A and I need earnings data this site doesn't have")}
                 {header('sector', 'Sector', 'left hide-sm')}
                 {header('avgTurnover', 'Avg turnover', 'hide-sm', 'Average daily turnover, last 20 sessions (NPR)')}
               </tr>
@@ -347,6 +351,9 @@ export function ResultsTable({
                   <td className="hide-sm">
                     <TrendTemplateBadge tt={r.tt} checks={r.ttChecks} />
                   </td>
+                  <td className="hide-sm">
+                    <CanSlimLetters c={r.canslim} m={marketUp} />
+                  </td>
                   <td className="left hide-sm muted">{r.sector}</td>
                   <td className="mono hide-sm">{fmt.npr(r.avgTurnover)}</td>
                 </tr>
@@ -379,6 +386,7 @@ function downloadCsv(rows: ScreenRow[], conditions: Condition[], asOf: string | 
     'Stage',
     'Weeks in stage',
     'Trend template (of 8)',
+    'CAN SLIM met (N S L)',
     '% below 52W high',
     ...conditions.map(conditionLabel),
   ];
@@ -396,6 +404,7 @@ function downloadCsv(rows: ScreenRow[], conditions: Condition[], asOf: string | 
     r.stage,
     r.stage ? r.stageWeeks : '',
     r.tt,
+    (['n', 's', 'l'] as const).filter((k) => r.canslim[k]).map((k) => k.toUpperCase()).join(' '),
     r.fromHigh?.toFixed(1),
     ...r.hits.map((h, i) => (!h.pass ? '' : hasWhen(conditions[i].op) ? `${h.date} (${fmt.ago(h.barsAgo)})` : `${h.left ?? ''}`)),
   ]);

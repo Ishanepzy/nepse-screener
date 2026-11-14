@@ -210,7 +210,7 @@ export function App() {
   const pickPreset = (id: string) => {
     const p = PRESETS.find((x) => x.id === id);
     // the preset sets the trend template / RS / stage filters; price, turnover and sector choices stay
-    const universe = { ...scan.universe, trendTemplate: undefined, minRs: undefined, stages: [], ...p?.universe };
+    const universe = { ...scan.universe, trendTemplate: undefined, canslim: undefined, minRs: undefined, stages: [], ...p?.universe };
     setScanState({ scan: { ...scanFromPreset(id), universe }, preset: id });
   };
 
@@ -329,6 +329,7 @@ export function App() {
               onSectorsChange={(sectors) => setScan({ ...scan, universe: { ...scan.universe, sectors } })}
               stages={scan.universe.stages ?? []}
               onStagesChange={(stages) => setScan({ ...scan, universe: { ...scan.universe, stages } })}
+              marketUp={market?.uptrend ?? null}
             />
           </>
         )}
@@ -366,6 +367,7 @@ export function App() {
           symbol={chart}
           conditions={page.page === 'screener' ? scan.conditions : []}
           trendTemplate={page.page === 'screener' && !!scan.universe.trendTemplate}
+          marketUp={market?.uptrend ?? null}
           theme={theme}
           list={chartList}
           version={version}

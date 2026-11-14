@@ -2162,9 +2162,13 @@ td.old-chg {
   justify-content: space-between;
   margin-top: 14px;
 }
-.rrg-quads {
+.rrg-quads,
+.rrg-sectors {
   padding: 0;
   border: 0;
+}
+.rrg-sectors {
+  margin-top: 12px;
 }
 .quad-chip::before {
   content: '';
@@ -2276,4 +2280,34 @@ td.old-chg {
 }
 .sym-chips.wrap {
   flex-wrap: wrap;
+}
+
+/* ---------- CAN SLIM letters ---------- */
+
+.canslim {
+  display: inline-flex;
+  gap: 1px;
+  font-size: var(--fs-sm);
+  letter-spacing: 0;
+}
+.canslim b {
+  width: 1.05em;
+  text-align: center;
+  font-weight: 700;
+}
+.canslim .on {
+  color: var(--up);
+}
+.canslim .off {
+  color: var(--muted);
+}
+.canslim .na {
+  color: var(--muted);
+  opacity: 0.35;
+  font-weight: 500;
+}
+.mkt-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }

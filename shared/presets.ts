@@ -9,7 +9,7 @@ export interface Preset {
   match: 'all' | 'any';
   conditions: Condition[];
   // picking a preset resets these three filters and leaves the others alone
-  universe?: Pick<Universe, 'trendTemplate' | 'minRs' | 'stages'>;
+  universe?: Pick<Universe, 'trendTemplate' | 'canslim' | 'minRs' | 'stages'>;
 }
 
 const o = (id: string, params: number[] = [], line?: string): Operand => ({ id, params, line });
@@ -52,6 +52,16 @@ export const PRESETS: Preset[] = [
     match: 'all',
     conditions: [],
     universe: { trendTemplate: true },
+  },
+  {
+    id: 'canslim',
+    name: 'CAN SLIM',
+    description:
+      "William O'Neil's CAN SLIM, the parts prices and volume can check: N (within 15% of the 52-week high), S (more volume on up days than down days over 50 sessions) and L (RS rating 80+). C, A and I need earnings data this site doesn't have; M, the market's trend, shows above the table.",
+    bias: 'list',
+    match: 'all',
+    conditions: [],
+    universe: { canslim: true },
   },
   {
     id: 'stage2-leaders',
