@@ -7,6 +7,8 @@ import type {
   LeaderItem,
   LeadersResponse,
   LiveQuote,
+  RotationPoint,
+  RotationResponse,
   Market,
   Operand,
   ScreenRequest,
@@ -18,7 +20,7 @@ import type {
 import { crossIndices, normalizeCondition, screenSymbol, type SeriesCache } from './screener.ts';
 import { getDef, isStateLine, seriesKey } from './registry.ts';
 import { PRESETS } from './presets.ts';
-import { buildProfiles, rsRatingHistory, rsRatingSeries, type Profile, type Stage } from './analysis.ts';
+import { ROTATION_WEEKS, buildProfiles, quadrantOf, rotationSeries, rsRatingHistory, rsRatingSeries, type Profile, type Stage } from './analysis.ts';
 
 export interface Dataset {
   asOf: string | null;
@@ -336,6 +338,41 @@ export class Engine {
     markers.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
     return { symbol, name: co.name, sector: co.sector ?? 'Unknown', bars, levels, markers, profile: this.profiles().get(symbol) ?? null };
+  }
+
+  // Relative rotation of the given stocks against the index, or of every company share still trading.
+  rotation(symbols: string[] | null = null, tailWeeks = 6): RotationResponse {
+    const profiles = this.profiles();
+    const list = symbols
+      ? symbols.flatMap((s) => {
+          const bars = this.ds.bars.get(s);
+          const co = this.ds.companies.get(s);
+          return bars && co ? [{ symbol: s, co, bars }] : [];
+        })
+      : [...this.universe({ equityOnly: true })];
+    const points: RotationPoint[] = [];
+    for (const { symbol, co, bars } of list) {
+      const r = rotationSeries(bars);
+      const last = r.x.length - 1;
+      if (!(last >= 0 && Number.isFinite(r.x[last]) && Number.isFinite(r.y[last]))) continue; // under ~5 months of weeks
+      const tail = [];
+      for (let i = Math.max(0, last - tailWeeks); i <= last; i++) {
+        if (Number.isFinite(r.x[i]) && Number.isFinite(r.y[i])) tail.push({ date: r.t[i], x: r.x[i], y: r.y[i] });
+      }
+      const p = profiles.get(symbol);
+      points.push({
+        symbol,
+        name: co.name,
+        sector: co.sector ?? 'Unknown',
+        x: r.x[last],
+        y: r.y[last],
+        quadrant: quadrantOf(r.x[last], r.y[last]),
+        tail,
+        stage: p?.stage ?? null,
+        rs: p?.rs ?? null,
+      });
+    }
+    return { asOf: this.ds.asOf, weeks: ROTATION_WEEKS, points };
   }
 
   leaders(minTurnover?: number): LeadersResponse {

@@ -42,12 +42,13 @@ function decode(s: string): string {
   }
 }
 
-export type Page = 'screener' | 'watchlist' | 'leaders' | 'journal' | 'calculator';
+export type Page = 'screener' | 'watchlist' | 'leaders' | 'rotation' | 'journal' | 'calculator';
 
 export const PAGES: { id: Page; label: string; title: string }[] = [
   { id: 'screener', label: 'Screener', title: 'Scan every stock for technical signals' },
   { id: 'watchlist', label: 'Watchlist', title: 'The stocks you starred' },
   { id: 'leaders', label: 'Leaders', title: 'Stage 2 leaders, and the strongest and weakest stocks in each sector' },
+  { id: 'rotation', label: 'Rotation', title: 'Relative rotation graph: which stocks are leading, weakening, lagging or improving against NEPSE' },
   { id: 'journal', label: 'Journal', title: 'Log your trades and track profit and loss' },
   { id: 'calculator', label: 'Position size', title: 'How many shares to buy for the risk you choose' },
 ];
@@ -59,7 +60,7 @@ export const pageHash = (page: Page, symbol?: string | null) =>
 // null when the hash is a chart
 export function pageFromHash(hash: string): { page: Page; symbol: string | null } | null {
   if (chartFromHash(hash)) return null;
-  const m = /^#\/(watchlist|leaders|journal|calculator)(?:\/([^/?#]+))?$/.exec(hash);
+  const m = /^#\/(watchlist|leaders|rotation|journal|calculator)(?:\/([^/?#]+))?$/.exec(hash);
   if (m) return { page: m[1] as Page, symbol: m[2] ? decode(m[2]) : null };
   return { page: 'screener', symbol: null };
 }

@@ -1,6 +1,6 @@
 // Weinstein stage, RS rating and trend template for every stock, as of its last bar.
 import type { Bars } from './types.ts';
-import { sma } from './indicators.ts';
+import { ema, sma, stdev } from './indicators.ts';
 
 export type Stage = 1 | 2 | 3 | 4;
 
@@ -29,23 +29,60 @@ const DAY = 86_400_000;
 // Sunday-to-Saturday weeks fit both NEPSE calendars: Sun-Thu until April 2026, Mon-Fri since.
 const weekOf = (date: string) => Math.floor((Date.parse(date) / DAY - 3) / 7); // 1970-01-04 was a Sunday
 
-// Last close of each week. The newest week can be a partial one.
-export function weeklyCloses(b: Bars): { t: string[]; c: number[] } {
+// Last close of each week (and the index close that day). The newest week can be a partial one.
+export function weeklyCloses(b: Bars): { t: string[]; c: number[]; ix: number[] } {
   const t: string[] = [];
   const c: number[] = [];
+  const ix: number[] = [];
   let prev = NaN;
   for (let i = 0; i < b.t.length; i++) {
     const w = weekOf(b.t[i]);
-    if (w === prev) {
-      t[t.length - 1] = b.t[i];
-      c[c.length - 1] = b.c[i];
-    } else {
-      t.push(b.t[i]);
-      c.push(b.c[i]);
+    if (w !== prev) {
+      t.push('');
+      c.push(NaN);
+      ix.push(NaN);
       prev = w;
     }
+    t[t.length - 1] = b.t[i];
+    c[c.length - 1] = b.c[i];
+    ix[ix.length - 1] = b.ix?.[i] ?? NaN;
   }
-  return { t, c };
+  return { t, c, ix };
+}
+
+// ---- relative rotation ----
+
+export type Quadrant = 'leading' | 'weakening' | 'lagging' | 'improving';
+
+export const quadrantOf = (x: number, y: number): Quadrant => (x >= 100 ? (y >= 100 ? 'leading' : 'weakening') : y >= 100 ? 'improving' : 'lagging');
+
+export const ROTATION_WEEKS = 10;
+
+const zScore = (src: number[], n: number) => {
+  const mean = sma(src, n);
+  const sd = stdev(src, n);
+  return src.map((v, i) => (sd[i] > 0 ? (v - mean[i]) / sd[i] : NaN));
+};
+
+// Relative rotation graph on weekly closes against the NEPSE index. JdK's exact RS-Ratio / RS-Momentum formulas
+// aren't public; this is the usual open approximation:
+//   x (RS-Ratio)    = 100 + z-score of price / index over n weeks. Above 100: beating the market.
+//   y (RS-Momentum) = 100 + z-score of x's weekly % change over n weeks. Above 100: the lead is growing.
+// Both inputs get a 3-week EMA first; without it the weekly tails zigzag instead of turning.
+// Stocks tend to turn clockwise: improving, leading, weakening, lagging.
+export function rotationSeries(b: Bars, n = ROTATION_WEEKS, smooth = 3): { t: string[]; x: number[]; y: number[] } {
+  const w = weeklyCloses(b);
+  const rs = ema(
+    w.c.map((c, i) => (w.ix[i] > 0 ? (100 * c) / w.ix[i] : NaN)),
+    smooth,
+  );
+  const x = zScore(rs, n).map((z) => 100 + z);
+  const roc = ema(
+    x.map((v, i) => (i > 0 ? 100 * (v / x[i - 1] - 1) : NaN)),
+    smooth,
+  );
+  const y = zScore(roc, n).map((z) => 100 + z);
+  return { t: w.t, x, y };
 }
 
 // 30-week average of weekly closes. Its slope is taken over 4 weeks, and under 0.5% counts as flat.

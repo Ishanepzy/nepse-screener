@@ -78,3 +78,20 @@ test('the chart and scans only work out RS history when the trend template needs
   assert.deepEqual(r.rows.map((x) => x.symbol), ['UP']);
   assert.equal(r.rows[0].tt, 8);
 });
+
+test('rotation covers company shares by default, and exactly the symbols asked for otherwise', () => {
+  const t = Array.from({ length: 300 }, (_, i) => new Date(Date.UTC(2025, 0, 1) + i * 86_400_000).toISOString().slice(0, 10));
+  const wave = (k: number) => bars(t, t.map((_, i) => 100 * (1 + 0.1 * Math.sin(i / 20 + k))));
+  const co = (symbol: string, sector: string) => ({ symbol, name: symbol, sector, active: true });
+  const e = new Engine({
+    asOf: t.at(-1)!,
+    builtAt: null,
+    companies: new Map([['AAA', co('AAA', 'Hydro Power')], ['BBB', co('BBB', 'Hydro Power')], ['MF1', co('MF1', 'Mutual Fund')]]),
+    bars: new Map([['AAA', wave(0)], ['BBB', wave(2)], ['MF1', wave(4)]]),
+    index: bars(t, t.map(() => 1000)),
+  });
+  assert.deepEqual(e.rotation().points.map((p) => p.symbol).sort(), ['AAA', 'BBB']);
+  const mine = e.rotation(['MF1', 'AAA']);
+  assert.deepEqual(mine.points.map((p) => p.symbol), ['MF1', 'AAA']);
+  assert.ok(mine.points.every((p) => p.tail.length === 7 && p.tail.at(-1)!.x === p.x));
+});

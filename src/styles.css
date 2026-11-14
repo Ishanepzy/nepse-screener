@@ -2151,3 +2151,129 @@ td.old-chg {
   gap: 4px;
   margin-right: 6px;
 }
+
+/* ---------- rotation graph ---------- */
+
+.rrg-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+.rrg-quads {
+  padding: 0;
+  border: 0;
+}
+.quad-chip::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--quad);
+  flex: none;
+}
+.quad-chip.on {
+  color: color-mix(in srgb, var(--quad) 60%, var(--text));
+  background: color-mix(in srgb, var(--quad) 13%, transparent);
+  border-color: color-mix(in srgb, var(--quad) 50%, transparent);
+}
+.rrg-card {
+  padding: 12px;
+  min-width: 0; /* else the svg's own width props the card open and the page scrolls sideways */
+}
+.rrg-wrap {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.rrg-wrap svg {
+  display: block;
+  max-width: 100%;
+  touch-action: manipulation;
+}
+.rrg-axis {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.rrg-tick {
+  fill: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.rrg-title {
+  fill: var(--muted);
+  font-size: 11.5px;
+}
+.rrg-quad {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.rrg-dot {
+  stroke: var(--surface);
+  stroke-width: 1.5px;
+  transition: opacity 0.12s;
+}
+.rrg-ring {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.5px;
+}
+.rrg-tail polyline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2px;
+  stroke-linejoin: round;
+  opacity: 0.85;
+}
+.rrg-tail circle {
+  fill: currentColor;
+  stroke: var(--surface);
+  stroke-width: 1px;
+}
+.rrg-label {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.rrg-tip {
+  position: absolute;
+  z-index: 5;
+  max-width: 260px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: 0 6px 24px #0003;
+  font-size: var(--fs-sm);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rrg-note {
+  margin: 8px 6px 2px;
+}
+.rrg-lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+  padding: 18px 20px;
+}
+.rrg-list h3 {
+  font-size: var(--fs-md);
+}
+.rrg-list p {
+  margin: 2px 0 8px;
+}
+.sym-chips.wrap {
+  flex-wrap: wrap;
+}

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildProfiles, rsRatingHistory, rsRatingSeries, rsRatings, rsScore, rsScoreSeries, stageHistory, trendTemplateSeries, weeklyCloses } from './analysis.ts';
+import { buildProfiles, quadrantOf, rotationSeries, rsRatingHistory, rsRatingSeries, rsRatings, rsScore, rsScoreSeries, stageHistory, trendTemplateSeries, weeklyCloses } from './analysis.ts';
 import { evaluate, normalizeCondition, crossIndices, type SeriesCache } from './screener.ts';
 import type { Bars } from './types.ts';
 
@@ -119,4 +119,20 @@ test('trend template per bar ends where the profile does, and needs the RS histo
   assert.equal(trendTemplateSeries(down).score.at(-1), p.get('DOWN')!.tt);
   assert.deepEqual(trendTemplateSeries(up).checks.map((c) => c.at(-1)), [1, 1, 1, 1, 1, 1, 1, 1]);
   assert.equal(trendTemplateSeries(up).score[150], trendTemplateSeries(up).checks.reduce((n, c) => n + c[150], 0));
+});
+
+test('rotation: a stock that cycles against a flat index turns clockwise through the four quadrants', () => {
+  // relative strength swings on a 26-week cycle; the index stays at 1000
+  const days = 5 * 90;
+  const b = weekdays(Array.from({ length: days }, (_, i) => 1000 * (1 + 0.1 * Math.sin((2 * Math.PI * i) / (5 * 26)))));
+  b.ix = b.c.map(() => 1000);
+  const { x, y } = rotationSeries(b);
+  const order = ['improving', 'leading', 'weakening', 'lagging'];
+  const seen = x.flatMap((v, i) => (Number.isFinite(v) && Number.isFinite(y[i]) ? [quadrantOf(v, y[i])] : []));
+  assert.ok(seen.length > 40);
+  assert.deepEqual(new Set(seen), new Set(order));
+  for (let i = 1; i < seen.length; i++) {
+    const step = (order.indexOf(seen[i]) - order.indexOf(seen[i - 1]) + 4) % 4;
+    assert.ok(step === 0 || step === 1, `week ${i}: ${seen[i - 1]} -> ${seen[i]}`);
+  }
 });

@@ -31,6 +31,7 @@ import { LeadersPage } from './components/LeadersPage.tsx';
 import { CalculatorPage } from './components/CalculatorPage.tsx';
 import { JournalPage } from './components/JournalPage.tsx';
 import { WatchlistPage } from './components/WatchlistPage.tsx';
+import { RotationPage } from './components/RotationPage.tsx';
 import * as fmt from './format.ts';
 
 type Theme = 'light' | 'dark';
@@ -213,6 +214,13 @@ export function App() {
     setScanState({ scan: { ...scanFromPreset(id), universe }, preset: id });
   };
 
+  // what the screener table shows (sector and stage chips applied), for the rotation page's "this scan" view
+  const sectorsPicked = scan.universe.sectors ?? [];
+  const stagesPicked = scan.universe.stages ?? [];
+  const shownSymbols = (result?.rows ?? [])
+    .filter((r) => (!sectorsPicked.length || sectorsPicked.includes(r.sector)) && (!stagesPicked.length || (r.stage != null && stagesPicked.includes(r.stage))))
+    .map((r) => r.symbol);
+
   const liveNow = session === 'live' && !!live;
   const waiting = session === 'waiting';
   const stale = !!info?.builtAt && Date.now() - Date.parse(info.builtAt) > STALE_AFTER_MS;
@@ -326,6 +334,14 @@ export function App() {
         )}
         {page.page === 'watchlist' && <WatchlistPage version={version} onOpenChart={openChart} />}
         {page.page === 'leaders' && <LeadersPage version={version} onOpenChart={openChart} />}
+        {page.page === 'rotation' && (
+          <RotationPage
+            version={version}
+            onOpenChart={openChart}
+            scanSymbols={shownSymbols}
+            scanLabel={PRESETS.find((p) => p.id === preset)?.name ?? 'Your scan'}
+          />
+        )}
         {page.page === 'journal' && <JournalPage version={version} onOpenChart={openChart} />}
         {page.page === 'calculator' && (
           <CalculatorPage

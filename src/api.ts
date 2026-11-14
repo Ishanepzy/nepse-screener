@@ -1,5 +1,5 @@
 // No backend: the page downloads one data file (built daily by the GitHub Action) and does the rest itself.
-import type { ChartResponse, Condition, LeadersResponse, LiveQuote, Market, ScreenRequest, ScreenResponse } from '../shared/types.ts';
+import type { ChartResponse, Condition, LeadersResponse, LiveQuote, Market, RotationResponse, ScreenRequest, ScreenResponse } from '../shared/types.ts';
 import { Engine, type OverviewItem } from '../shared/engine.ts';
 import { decodeSnapshot, type SnapshotFile } from '../shared/snapshot.ts';
 
@@ -40,6 +40,7 @@ export const api = {
     (await engine()).chart(symbol, conditions, withRs),
   leaders: async (minTurnover?: number): Promise<LeadersResponse> => (await engine()).leaders(minTurnover),
   watch: async (symbols: string[]): Promise<ScreenResponse> => (await engine()).watch(symbols),
+  rotation: async (symbols: string[] | null): Promise<RotationResponse> => (await engine()).rotation(symbols),
   lastPrices: async (): Promise<Map<string, { close: number; date: string }>> => {
     const m = new Map<string, { close: number; date: string }>();
     for (const [s, b] of (await engine()).ds.bars) if (b.c.length) m.set(s, { close: b.c[b.c.length - 1], date: b.t[b.t.length - 1] });

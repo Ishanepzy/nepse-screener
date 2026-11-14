@@ -8,6 +8,7 @@ Live: https://ishanepzy.github.io/nepse-screener/
   your own conditions
 - RS rating, Weinstein stage and Minervini trend template for every stock
 - charts with indicators and drawing tools
+- relative rotation graph against the NEPSE index
 - watchlist, leaders and laggards by sector, position size calculator, trade journal
 - live prices during market hours
 
@@ -76,6 +77,14 @@ worked out when that panel is open or a scan uses it.
 **Price / NEPSE.** Close divided by the index close of the same day, in its own panel with its moving average.
 The line turns gold with a dot on every bar where the ratio closes above its highest value of the previous 126
 days (6 months), so a run of dots is a stock that keeps outrunning the market. The lookback can be changed.
+
+**Relative rotation.** Each stock against the NEPSE index on weekly closes. RS-Ratio (across) is 100 plus the
+z-score of price / index over 10 weeks; RS-Momentum (up) is 100 plus the z-score of RS-Ratio's weekly change over
+10 weeks, both after a 3-week EMA. JdK's exact formulas aren't public, so this is the usual open approximation.
+Right of centre a stock is beating the market, above centre its lead is growing. Stocks tend to travel clockwise
+through improving, leading, weakening and lagging. A bubble's size is how far it sits into its quadrant, and hovering
+one draws its last 6 weeks. The page shows every company share, what the screener currently lists, or the
+watchlist; a stock needs about 5 months of history to appear.
 
 ## Fees
 

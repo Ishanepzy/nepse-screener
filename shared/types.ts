@@ -1,4 +1,4 @@
-import type { Profile, Stage } from './analysis.ts';
+import type { Profile, Quadrant, Stage } from './analysis.ts';
 
 // Daily bars for one symbol, oldest first. t = trade date, YYYY-MM-DD.
 export interface Bars {
@@ -168,4 +168,24 @@ export interface LiveQuote {
   low: number;
   close: number;
   volume: number;
+}
+
+export interface RotationPoint {
+  symbol: string;
+  name: string;
+  sector: string;
+  // RS-Ratio and RS-Momentum this week
+  x: number;
+  y: number;
+  quadrant: Quadrant;
+  // the weeks before, oldest first, ending with this week: the tail drawn behind the bubble
+  tail: { date: string; x: number; y: number }[];
+  stage: Stage | null;
+  rs: number | null;
+}
+
+export interface RotationResponse {
+  asOf: string | null;
+  weeks: number;
+  points: RotationPoint[];
 }
