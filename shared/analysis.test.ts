@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildProfiles, upDownVolume, quadrantOf, rotationSeries, rsRatingHistory, rsRatingSeries, rsRatings, rsScore, rsScoreSeries, stageHistory, trendTemplateSeries, weeklyCloses } from './analysis.ts';
+import { buildProfiles, canslimSeries, upDownSums, upDownVolume, quadrantOf, rotationSeries, rsRatingHistory, rsRatingSeries, rsRatings, rsScore, rsScoreSeries, stageHistory, trendTemplateSeries, weeklyCloses } from './analysis.ts';
 import { evaluate, normalizeCondition, crossIndices, type SeriesCache } from './screener.ts';
 import type { Bars } from './types.ts';
 
@@ -148,4 +148,32 @@ test('CAN SLIM: up/down volume, and N, S, L on a strong stock and a weak one', (
   const p = buildProfiles(new Map([['UP', { bars: up, ranked: true }], ['DOWN', { bars: down, ranked: true }]]));
   assert.deepEqual(p.get('UP')!.canslim, { n: true, s: true, l: true });
   assert.deepEqual(p.get('DOWN')!.canslim, { n: false, s: false, l: false });
+});
+
+test('CAN SLIM series: N, S, L and M on every bar, the 50-session volume window rolling like a fresh count', () => {
+  const c: number[] = [];
+  const v: number[] = [];
+  let x = 100;
+  for (let i = 0; i < 320; i++) {
+    x += Math.sin(i * 0.7) * 3 + (i >= 200 && i < 260 ? -0.7 : 0.1); // a 60-session slide takes it well off its high
+    c.push(Math.round(x * 100) / 100);
+    v.push(100 + ((i * 37) % 250));
+  }
+  const b = weekdays(c);
+  b.v = v;
+  b.rs = c.map((_, i) => (i % 2 ? 85 : 50));
+  b.mkt = c.map((_, i) => (i < 200 ? NaN : i % 3 ? 1 : 0));
+  const s = canslimSeries(b);
+  for (let i = 0; i < c.length; i++) {
+    const { up, down } = upDownSums({ ...b, c: c.slice(0, i + 1), v: v.slice(0, i + 1) });
+    assert.equal(s.s[i], up > down ? 1 : 0, `S on bar ${i}`);
+    const hi = Math.max(...b.h.slice(Math.max(0, i - 249), i + 1));
+    assert.equal(s.n[i], c[i] >= hi * 0.85 ? 1 : 0, `N on bar ${i}`);
+    assert.equal(s.l[i], i % 2 ? 1 : 0);
+    assert.equal(s.score[i], s.n[i] + s.s[i] + s.l[i] + (b.mkt[i] === 1 ? 1 : 0));
+  }
+  assert.ok(s.s.includes(0) && s.s.includes(1) && s.n.includes(0) && s.n.includes(1));
+  // without RS or market data, L is never met and M is unknown
+  const bare = canslimSeries(weekdays(c));
+  assert.ok(bare.l.every((x) => x === 0) && bare.m.every(Number.isNaN));
 });

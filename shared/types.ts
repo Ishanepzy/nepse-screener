@@ -12,6 +12,9 @@ export interface Bars {
   ix?: number[];
   // RS rating on each bar date, company shares only. Set by Engine for the trend template indicator.
   rs?: number[];
+  // CAN SLIM's M on each bar date: 1 when the NEPSE index was in an uptrend, 0 when not, NaN before the index
+  // has 200 bars. Set by Engine.
+  mkt?: number[];
 }
 
 export interface Operand {

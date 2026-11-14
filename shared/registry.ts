@@ -1,6 +1,6 @@
 import type { Bars, Operand } from './types.ts';
 import * as ta from './indicators.ts';
-import { trendTemplateSeries } from './analysis.ts';
+import { canslimSeries, high52Series, trendTemplateSeries } from './analysis.ts';
 
 export interface ParamDef {
   label: string;
@@ -63,6 +63,25 @@ export const INDICATORS: IndicatorDef[] = [
     lines: [1, 2, 3, 4, 5].map((k) => ({ key: `ma${k}`, label: `MA ${k}` })),
     pane: 'price',
     compute: (b, p) => Object.fromEntries(p.map((n, k) => [`ma${k + 1}`, ta.sma(b.c, n)])),
+  },
+  {
+    // what an O'Neil chart shows on the price: the 50- and 200-day averages, and the 52-week high with the line
+    // 15% under it. Between those two lines the stock meets CAN SLIM's N.
+    id: 'csma',
+    label: 'CAN SLIM',
+    short: 'CAN SLIM',
+    params: [],
+    lines: [
+      { key: 'hi', label: '52-week high' },
+      { key: 'n', label: '15% under the high' },
+      { key: 'ma50', label: '50-day average' },
+      { key: 'ma200', label: '200-day average' },
+    ],
+    pane: 'price',
+    compute: (b) => {
+      const hi = high52Series(b);
+      return { hi, n: hi.map((x) => x * 0.85), ma50: ta.sma(b.c, 50), ma200: ta.sma(b.c, 200) };
+    },
   },
   {
     id: 'bb',
@@ -141,6 +160,22 @@ export const INDICATORS: IndicatorDef[] = [
       const out: Record<string, ta.Series> = { score, pass: score.map((x) => (x === 8 ? 1 : 0)) };
       checks.forEach((c, r) => (out[`r${r}`] = c)); // each rule, for the chart legend
       return out;
+    },
+  },
+  {
+    id: 'cs',
+    label: 'CAN SLIM rules',
+    short: 'CAN SLIM rules',
+    params: [],
+    lines: [
+      { key: 'score', label: 'Letters met (N, S, L, M)' },
+      { key: 'pass', label: 'N, S, L and M all met', event: true, state: true },
+    ],
+    pane: 'osc',
+    compute: (b) => {
+      const { score, n, s, l, m } = canslimSeries(b);
+      // each letter too, for the chart legend
+      return { score, pass: score.map((x) => (x === 4 ? 1 : 0)), n, s, l, m };
     },
   },
   { id: 'volume', label: 'Volume', short: 'Volume', params: [], lines: VALUE, pane: 'volume', compute: (b) => one(b.v) },

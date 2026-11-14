@@ -1288,69 +1288,23 @@ td.price {
 /* drawings */
 .draw-layer {
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
   z-index: 2;
   overflow: hidden;
-  --draw: var(--accent);
-}
-.draw-layer.drawing {
-  cursor: crosshair;
-}
-.draw-line {
-  stroke: var(--draw);
-  stroke-width: 2;
-  fill: none;
   pointer-events: none;
 }
-.draw-line.faint {
-  stroke-width: 1;
-  stroke-dasharray: 4 4;
-  opacity: 0.6;
-}
-.draw-line.fib {
-  stroke-width: 1;
-  opacity: 0.75;
-}
-.draw-line.fib.key {
-  stroke-width: 1.6;
-  opacity: 1;
-}
-.draw-line.up {
-  stroke: var(--up);
-}
-.draw-line.down {
-  stroke: var(--down);
-}
-.draw-hit {
+/* hit shapes: invisible, wide enough to grab; read by isPointInStroke / isPointInFill, never by the mouse */
+.dh {
   stroke: transparent;
-  stroke-width: 14;
-  pointer-events: stroke;
-  cursor: move;
+  stroke-width: 12;
+  fill: none;
 }
-.draw-rect {
-  fill: color-mix(in srgb, var(--draw) 12%, transparent);
-  stroke: var(--draw);
-  stroke-width: 1.5;
-  pointer-events: all;
-  cursor: move;
-}
-.draw-hit-area {
+.dh-fill {
   fill: transparent;
-  pointer-events: all;
-  cursor: move;
 }
-.draw-measure {
-  fill: color-mix(in srgb, var(--muted) 12%, transparent);
-  stroke: none;
-  pointer-events: all;
-  cursor: move;
-}
-.draw-measure.up {
-  fill: color-mix(in srgb, var(--up) 14%, transparent);
-}
-.draw-measure.down {
-  fill: color-mix(in srgb, var(--down) 14%, transparent);
+.draw-handle {
+  fill: var(--surface);
+  stroke-width: 1.6;
 }
 .draw-label {
   font-size: 12px;
@@ -1359,31 +1313,257 @@ td.price {
   paint-order: stroke;
   stroke: var(--surface);
   stroke-width: 3px;
-  pointer-events: none;
+  stroke-linejoin: round;
 }
-.draw-label.up {
-  fill: var(--up);
+.draw-label.muted {
+  fill: var(--muted);
+  font-weight: 500;
 }
-.draw-label.down {
-  fill: var(--down);
+.draw-text {
+  font-weight: 500;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
 }
-.drawing.sel .draw-line,
-.drawing.sel .draw-rect {
-  stroke-width: 2.5;
-}
-.handle {
+.axis-label {
+  font-size: 11.5px;
+  font-weight: 600;
   fill: var(--surface);
-  stroke: var(--draw);
-  stroke-width: 2;
-  pointer-events: all;
-  cursor: grab;
+  font-variant-numeric: tabular-nums;
 }
-.draw-layer.drawing .draw-hit,
-.draw-layer.drawing .draw-rect,
-.draw-layer.drawing .draw-hit-area,
-.draw-layer.drawing .draw-measure,
-.draw-layer.drawing .handle {
-  pointer-events: none;
+.draw-text-edit {
+  position: absolute;
+  z-index: 6;
+  min-width: 160px;
+  padding: 2px 4px;
+  border: 1px dashed var(--accent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  font: inherit;
+  font-weight: 500;
+  line-height: 1.3;
+  resize: none;
+  outline: none;
+  overflow: hidden;
+}
+/* lightweight-charts sets its own cursor on the panels; these win over it */
+.chart-box[data-cursor='crosshair'],
+.chart-box[data-cursor='crosshair'] * {
+  cursor: crosshair !important;
+}
+.chart-box[data-cursor='move'],
+.chart-box[data-cursor='move'] * {
+  cursor: move !important;
+}
+.chart-box[data-cursor='grab'],
+.chart-box[data-cursor='grab'] * {
+  cursor: grab !important;
+}
+.chart-box[data-cursor='grabbing'],
+.chart-box[data-cursor='grabbing'] * {
+  cursor: grabbing !important;
+}
+.chart-box[data-cursor='pointer'],
+.chart-box[data-cursor='pointer'] * {
+  cursor: pointer !important;
+}
+
+/* tool groups: the button plus a corner triangle that opens the rest of the group */
+.tool-group {
+  position: relative;
+}
+.tool-more {
+  position: absolute;
+  right: -3px;
+  bottom: -1px;
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tool-more:hover,
+.tool-more[aria-expanded='true'] {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.tool-fly {
+  position: fixed;
+  z-index: 40;
+  min-width: 230px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 14px 40px #0000002e;
+}
+.tool-fly .pop-sub {
+  margin: 4px 8px 6px;
+}
+.fly-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.fly-item span {
+  flex: 1;
+}
+.fly-item:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.fly-item.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.fly-item kbd {
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+/* the selected drawing's settings, floating over the chart */
+.style-bar {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 6px 22px #00000024;
+  max-width: calc(100% - 16px);
+}
+.sb-name {
+  padding: 0 8px 0 6px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.sb-btn {
+  min-width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  font: inherit;
+}
+.sb-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.sb-btn.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.sb-btn.danger:hover {
+  color: var(--down);
+}
+.sb-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.sb-text {
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.sb-sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 3px;
+  background: var(--border);
+}
+.sb-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px #0000001f;
+}
+.sb-pop-wrap {
+  position: relative;
+}
+.sb-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  min-width: 130px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 14px 40px #0000002e;
+}
+.sb-colors {
+  display: grid;
+  grid-template-columns: repeat(5, 26px);
+  gap: 6px;
+  padding: 2px;
+}
+.sb-color {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px #0000001f;
+}
+.sb-color.on {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.sb-opt {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sb-opt:hover {
+  background: var(--surface-2);
+}
+.sb-opt.on {
+  color: var(--accent);
+}
+.sb-line {
+  width: 30px;
+  background: currentColor;
+  border-radius: 2px;
 }
 
 @media (max-width: 720px) {
@@ -1508,6 +1688,22 @@ td.price {
     width: 1px;
     height: 24px;
     margin: 0 4px;
+  }
+  .tool-group {
+    flex: none;
+  }
+  .style-bar {
+    top: auto;
+    bottom: 40px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .sb-name {
+    display: none;
+  }
+  .sb-pop {
+    top: auto;
+    bottom: calc(100% + 8px);
   }
   .tool-hint {
     white-space: normal;

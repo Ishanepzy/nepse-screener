@@ -14,16 +14,18 @@ export interface ChartIndicator {
 }
 
 export const CHARTABLE: { group: string; ids: string[] }[] = [
-  { group: 'Moving averages', ids: ['ema', 'sma', 'wma', 'ttma'] },
+  { group: 'Moving averages', ids: ['ema', 'sma', 'wma'] },
+  // each adds its lines on the price and a panel of its rules
+  { group: 'Strategies', ids: ['ttma', 'csma'] },
   { group: 'Strength (own panel)', ids: ['ratio'] },
   { group: 'Trend & bands', ids: ['bb', 'supertrend', 'hh', 'll'] },
   { group: 'Volume', ids: ['volsma'] },
   { group: 'Oscillators (own panel)', ids: ['rsi', 'macd', 'stoch', 'adx', 'atr', 'roc'] },
 ];
-// tt has no chip of its own (it comes with ttma) but can still be on a chart and in the saved list
-const CHARTABLE_IDS = new Set([...CHARTABLE.flatMap((g) => g.ids), 'tt']);
+// the rule panels have no chip of their own (they come with ttma / csma) but can still be on a chart and saved
+const CHARTABLE_IDS = new Set([...CHARTABLE.flatMap((g) => g.ids), 'tt', 'cs']);
 
-export const GUIDES: Record<string, number[]> = { rsi: [70, 30], stoch: [80, 20], adx: [25], macd: [0], roc: [0], tt: [8] };
+export const GUIDES: Record<string, number[]> = { rsi: [70, 30], stoch: [80, 20], adx: [25], macd: [0], roc: [0], tt: [8], cs: [4] };
 
 const KEY = 'nepse.chart.indicators.v1';
 const DEFAULTS: Omit<ChartIndicator, 'uid' | 'slot'>[] = [
@@ -49,9 +51,9 @@ function freeSlot(list: ChartIndicator[]): number {
   return list.length % 8;
 }
 
-// The trend template comes as a pair: its five averages on the price, and the rules panel under it. Adding either
+// The trend template and CAN SLIM come as pairs: lines on the price, and the rules panel under it. Adding either
 // brings the other, unless it is already there.
-const COMES_WITH: Record<string, string> = { ttma: 'tt', tt: 'ttma' };
+const COMES_WITH: Record<string, string> = { ttma: 'tt', tt: 'ttma', csma: 'cs', cs: 'csma' };
 
 export function addIndicator(list: ChartIndicator[], id: string, params?: number[], dedupe = true): ChartIndicator[] {
   const def = getDef(id);
@@ -65,6 +67,8 @@ export function addIndicator(list: ChartIndicator[], id: string, params?: number
 
 // what the screener's "meets the trend template" filter adds to a chart opened from it
 export const withTrendTemplate = (list: ChartIndicator[]) => (list.some((i) => i.id === 'ttma') ? list : addIndicator(list, 'ttma'));
+// ...and its "meets CAN SLIM" filter
+export const withCanslim = (list: ChartIndicator[]) => (list.some((i) => i.id === 'csma') ? list : addIndicator(list, 'csma'));
 
 export function defaultIndicators(): ChartIndicator[] {
   return DEFAULTS.reduce<ChartIndicator[]>((acc, d) => addIndicator(acc, d.id, d.params), []);

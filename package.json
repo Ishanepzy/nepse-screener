@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "data": "node pipeline/build-data.ts",
     "type-check": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test \"shared/**/*.test.ts\""
+    "test": "node --test \"shared/**/*.test.ts\" \"src/**/*.test.ts\""
   },
   "engines": {
     "node": ">=23.6"

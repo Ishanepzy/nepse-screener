@@ -367,6 +367,7 @@ export function App() {
           symbol={chart}
           conditions={page.page === 'screener' ? scan.conditions : []}
           trendTemplate={page.page === 'screener' && !!scan.universe.trendTemplate}
+          canslim={page.page === 'screener' && !!scan.universe.canslim}
           marketUp={market?.uptrend ?? null}
           theme={theme}
           list={chartList}

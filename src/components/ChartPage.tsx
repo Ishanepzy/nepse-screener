@@ -20,8 +20,10 @@ import type { ChartResponse, Condition } from '../../shared/types.ts';
 import { getDef } from '../../shared/registry.ts';
 import { api } from '../api.ts';
 import * as fmt from '../format.ts';
-import { DrawingLayer } from '../chart/DrawingLayer.tsx';
-import { TOOLS, loadDrawings, saveDrawings, type Drawing, type DrawingType } from '../chart/drawings.ts';
+import { DrawingLayer, type Editing, type PaneRef } from '../chart/DrawingLayer.tsx';
+import { DrawingStyleBar, DrawingToolbar } from '../chart/DrawingToolbar.tsx';
+import { TOOLS, newId, saveStyleDefault, toolById, type Style, type ToolId } from '../chart/drawings.ts';
+import { useDrawings } from '../chart/useDrawings.ts';
 import {
   GUIDES,
   computeIndicator,
@@ -29,6 +31,7 @@ import {
   indicatorLabel,
   loadIndicators,
   saveIndicators,
+  withCanslim,
   withScanIndicators,
   withTrendTemplate,
   type ChartIndicator,
@@ -50,12 +53,26 @@ const TT_MA_PREFERRED = [0, 1, 2, 4, 6, 3, 5, 7];
 const RANGES = { '3M': 63, '6M': 125, '1Y': 250, '2Y': 500, All: 0 } as const;
 type Range = keyof typeof RANGES;
 const VOLUME_KEY = 'nepse.chart.volume';
+const DRAW_PREFS_KEY = 'nepse.drawings.prefs';
+
+interface DrawPrefs {
+  magnet: boolean;
+  stay: boolean;
+  lockAll: boolean;
+  hideAll: boolean;
+}
+function loadDrawPrefs(): DrawPrefs {
+  const v = load(DRAW_PREFS_KEY) as Partial<DrawPrefs> | null;
+  return { magnet: !!v?.magnet, stay: !!v?.stay, lockAll: !!v?.lockAll, hideAll: !!v?.hideAll };
+}
 
 interface Props {
   symbol: string;
   conditions: Condition[];
   // the screen behind this chart only lists stocks meeting the trend template, so show it
   trendTemplate?: boolean;
+  // ...or only stocks meeting CAN SLIM's N, S and L
+  canslim?: boolean;
   // CAN SLIM's M, for the header
   marketUp?: boolean | null;
   theme: 'light' | 'dark';
@@ -81,7 +98,7 @@ function applyRange(chart: IChartApi, n: number, r: Range) {
   else chart.timeScale().setVisibleLogicalRange({ from: n - bars, to: n + 3 });
 }
 
-export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp = null, theme, list, version, onNavigate, onClose, onSizePosition }: Props) {
+export function ChartPage({ symbol, conditions, trendTemplate = false, canslim = false, marketUp = null, theme, list, version, onNavigate, onClose, onSizePosition }: Props) {
   const [data, setData] = useState<ChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<Range>('1Y');
@@ -89,9 +106,20 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
   const [parts, setParts] = useState<Parts | null>(null);
   const [showVolume, setShowVolumeState] = useState(() => load(VOLUME_KEY) !== 0);
   const [showSignals, setShowSignals] = useState(true);
-  const [tool, setTool] = useState<DrawingType | null>(null);
-  const [drawings, setDrawings] = useState<Drawing[]>([]);
+  const [toolId, setTool] = useState<ToolId | null>(null);
+  const tool = toolById(toolId);
   const [selected, setSelected] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  // points placed so far, for the hint
+  const [step, setStep] = useState(0);
+  const [prefs, setPrefsState] = useState(loadDrawPrefs);
+  const setPrefs = (patch: Partial<DrawPrefs>) => {
+    const next = { ...prefs, ...patch };
+    setPrefsState(next);
+    save(DRAW_PREFS_KEY, next);
+  };
+  // the panels drawings can go on, for the chart they were built for
+  const [panes, setPanes] = useState<{ chart: IChartApi; list: PaneRef[] } | null>(null);
   // focus = fallback when the browser refuses full screen: hide the title row instead
   const [fullscreen, setFullscreen] = useState<'off' | 'native' | 'focus'>('off');
   const pageRef = useRef<HTMLDivElement>(null);
@@ -113,10 +141,11 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
     setIndicatorsState((current) => {
       let merged = withScanIndicators(current, conditions);
       if (trendTemplate) merged = withTrendTemplate(merged);
+      if (canslim) merged = withCanslim(merged);
       for (const i of merged) if (!current.includes(i)) transient.current.add(i.uid);
       return merged;
     });
-  }, [condKey, trendTemplate]); // `conditions` is a new array on every render
+  }, [condKey, trendTemplate, canslim]); // `conditions` is a new array on every render
   const setIndicators = (next: ChartIndicator[]) => {
     setIndicatorsState(next);
     saveIndicators(next.filter((i) => !transient.current.has(i.uid)));
@@ -126,13 +155,13 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
     save(VOLUME_KEY, v ? 1 : 0);
   };
   const maSlots = useMemo(() => {
-    const taken = new Set(indicators.filter((x) => x.id !== 'ttma' && getDef(x.id).pane === 'price').map((x) => x.slot));
+    const taken = new Set(indicators.filter((x) => x.id !== 'ttma' && x.id !== 'csma' && getDef(x.id).pane === 'price').map((x) => x.slot));
     const free = TT_MA_PREFERRED.filter((s) => !taken.has(s));
     return [...free, ...TT_MA_PREFERRED].slice(0, 5); // more lines than colours: repeat
   }, [indicators]);
-  const colorOf = (ind: ChartIndicator, k = 0) => PALETTE[theme][ind.id === 'ttma' ? maSlots[k] : (ind.slot + k) % 8];
+  const colorOf = (ind: ChartIndicator, k = 0) => PALETTE[theme][ind.id === 'ttma' || ind.id === 'csma' ? maSlots[k] : (ind.slot + k) % 8];
   // the trend template needs the RS rating on every bar, which the engine only works out on request
-  const withRs = indicators.some((i) => i.id === 'tt');
+  const withRs = indicators.some((i) => i.id === 'tt' || i.id === 'cs');
 
   useEffect(() => {
     let off = false;
@@ -156,15 +185,28 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
 
   // drawings belong to the stock whose bars are on screen
   const shownSymbol = data?.symbol;
+  const { drawings, commit: commitDrawings, undo, redo, canUndo, canRedo, saveFailed } = useDrawings(shownSymbol);
   useEffect(() => {
-    if (!shownSymbol) return;
-    setDrawings(loadDrawings(shownSymbol));
     setSelected(null);
     setTool(null);
+    setEditing(null);
   }, [shownSymbol]);
-  const updateDrawings = (next: Drawing[]) => {
-    setDrawings(next);
-    if (shownSymbol) saveDrawings(shownSymbol, next);
+  const selectedDrawing = drawings.find((d) => d.id === selected) ?? null;
+  const deleteSelected = () => {
+    if (!selectedDrawing) return;
+    commitDrawings(drawings.filter((d) => d.id !== selectedDrawing.id));
+    setSelected(null);
+  };
+  const updateSelected = (patch: { style?: Partial<Style>; locked?: boolean }) => {
+    if (!selectedDrawing) return;
+    commitDrawings(drawings.map((d) => (d.id === selectedDrawing.id ? { ...d, ...(patch.locked != null ? { locked: patch.locked || undefined } : {}), style: { ...d.style, ...patch.style } } : d)));
+    if (patch.style) saveStyleDefault(selectedDrawing.type, patch.style);
+  };
+  const cloneSelected = () => {
+    if (!selectedDrawing) return;
+    const copy = { ...selectedDrawing, id: newId(), locked: undefined, pts: selectedDrawing.pts.map((a) => ({ ...a, o: a.o + 5 })) };
+    commitDrawings([...drawings, copy]);
+    setSelected(copy.id);
   };
 
   // no background scroll while the chart is open; track full screen
@@ -187,14 +229,30 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof Element && e.target.closest('input, select, textarea')) return;
+      const mod = e.ctrlKey || e.metaKey;
+      // e.code, not e.key: Alt+T on a Mac types a symbol
+      const letter = e.code.startsWith('Key') ? e.code.slice(3) : e.key;
+      if (mod && !e.altKey && (letter === 'Z' || letter === 'Y')) {
+        e.preventDefault();
+        if (letter === 'Y' || e.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (e.altKey && !mod) {
+        const t = TOOLS.find((x) => x.key === `Alt+${e.shiftKey ? 'Shift+' : ''}${letter}`);
+        if (t) {
+          e.preventDefault();
+          setTool(toolId === t.id ? null : t.id);
+          return;
+        }
+      }
       if (e.key === 'Escape') {
         if (tool) setTool(null);
         else if (selected) setSelected(null);
         else if (fullscreen === 'focus') setFullscreen('off');
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedDrawing && !tool) {
         e.preventDefault();
-        updateDrawings(drawings.filter((d) => d.id !== selected));
-        setSelected(null);
+        deleteSelected();
       } else if (e.key === 'ArrowLeft' && prevSym) {
         e.preventDefault();
         onNavigate(prevSym);
@@ -244,7 +302,6 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
       const n = dataRef.current?.bars.t.length ?? 0;
       setHover(i != null && i >= 0 && i < n ? i : null);
     });
-    chart.subscribeClick(() => setSelected(null));
     applyRange(chart, data.bars.t.length, rangeRef.current);
     const next = { chart, candles, volume, markers };
     liveParts.current = next;
@@ -323,6 +380,7 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
     const down = v('--down');
     const { bars } = data;
     let osc = 0;
+    const paneList: PaneRef[] = [{ id: 'price', index: 0, series: parts.candles }];
     for (const ind of indicators) {
       const def = getDef(ind.id);
       const lines = computed.get(ind.uid);
@@ -337,8 +395,11 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
         if (ln.key === 'hist') {
           s = chart.addSeries(HistogramSeries, { ...scale, priceLineVisible: false, lastValueVisible: false }, pane);
           s.setData(bars.t.map((time, i) => (Number.isFinite(vals[i]) ? { time, value: vals[i], color: (vals[i] >= 0 ? up : down) + '88' } : { time })));
-        } else if (ind.id === 'tt') {
-          // rules met per day: green at 8, amber at 6-7, grey below
+        } else if (ind.id === 'tt' || ind.id === 'cs') {
+          // rules met per day: green with all of them (8 of the trend template, 4 of CAN SLIM), amber one or two
+          // short of that, grey below
+          const all = ind.id === 'tt' ? 8 : 4;
+          const near = ind.id === 'tt' ? 6 : 3;
           s = chart.addSeries(
             HistogramSeries,
             { priceLineVisible: false, lastValueVisible: true, priceFormat: { type: 'price', precision: 0, minMove: 1 } },
@@ -346,30 +407,35 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
           );
           const amber = v('--neutral');
           const grey = v('--muted');
-          s.setData(bars.t.map((time, i) => ({ time, value: vals[i], color: vals[i] === 8 ? up : vals[i] >= 6 ? amber + 'cc' : grey + '66' })));
+          s.setData(bars.t.map((time, i) => ({ time, value: vals[i], color: vals[i] === all ? up : vals[i] >= near ? amber + 'cc' : grey + '66' })));
         } else {
           const ratio = ind.id === 'ratio';
+          const cs = ind.id === 'csma';
           const color =
             ind.id === 'adx' && ln.key !== 'adx'
-                ? ln.key === 'pdi'
-                  ? up
-                  : down
+              ? ln.key === 'pdi'
+                ? up
+                : down
+              : cs
+                ? ln.key === 'hi' || ln.key === 'n'
+                  ? v('--gold')
+                  : colorOf(ind, ln.key === 'ma50' ? 0 : 1)
                 : colorOf(ind, ind.id === 'bb' || ratio ? 0 : k);
           // five averages on top of the candles: thin lines, or the price disappears under them
-          const thin = ind.id === 'bb' || ind.id === 'ttma' || (ratio && ln.key !== 'value');
+          const thin = ind.id === 'bb' || ind.id === 'ttma' || cs || (ratio && ln.key !== 'value');
           s = chart.addSeries(
             LineSeries,
             {
               ...scale,
               color,
               lineWidth: thin ? 1 : 2,
-              lineStyle: (ind.id === 'bb' && ln.key === 'middle') || (ratio && ln.key === 'ma') ? LineStyle.Dashed : LineStyle.Solid,
-              lineType: ind.id === 'hh' || ind.id === 'll' ? LineType.WithSteps : LineType.Simple,
+              lineStyle: (ind.id === 'bb' && ln.key === 'middle') || (ratio && ln.key === 'ma') || (cs && ln.key === 'n') ? LineStyle.Dashed : LineStyle.Solid,
+              lineType: ind.id === 'hh' || ind.id === 'll' || (cs && (ln.key === 'hi' || ln.key === 'n')) ? LineType.WithSteps : LineType.Simple,
               // a price / index ratio is around 0.1 to 1, so the axis needs 4 decimals
               ...(ratio ? { priceFormat: { type: 'price' as const, precision: 4, minMove: 0.0001 } } : {}),
               priceLineVisible: false,
               // the ratio's axis shows the ratio only, not its average as well
-              lastValueVisible: !(ratio && ln.key === 'ma'),
+              lastValueVisible: !(ratio && ln.key === 'ma') && !(cs && ln.key === 'n'),
               crosshairMarkerRadius: 3,
             },
             pane,
@@ -395,6 +461,11 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
         first ??= s;
         indicatorSeries.current.push(s);
       });
+      if (pane > 0 && first) {
+        // two copies of one indicator: drawings stay with the first
+        const key = indicatorKey(ind);
+        if (!paneList.some((p) => p.id === key)) paneList.push({ id: key, index: pane, series: first });
+      }
       for (const g of GUIDES[ind.id] ?? []) {
         first!.createPriceLine({ price: g, color: v('--muted'), lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: '' });
       }
@@ -405,6 +476,7 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
     const panes = chart.panes();
     const keep = heights.length === panes.length && panes.length > 1;
     panes.forEach((p, i) => p.setStretchFactor(keep ? heights[i] : i === 0 ? 3 : 1));
+    setPanes({ chart, list: paneList });
   }, [parts, computed, levelKey]);
 
   const toggleFullscreen = () => {
@@ -432,7 +504,7 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
   const chg = b && i > 0 ? ((b.c[i] - b.c[i - 1]) / b.c[i - 1]) * 100 : null;
   const lastChg = b && n > 1 ? ((b.c[n - 1] - b.c[n - 2]) / b.c[n - 2]) * 100 : 0;
   const tone = (x: number | null) => (x == null || x === 0 ? '' : x > 0 ? 'up' : 'down');
-  const activeTool = TOOLS.find((t) => t.type === tool);
+  const hint = tool && toolHint(tool.id, step);
 
   return (
     <div className={`chart-page ${fullscreen === 'focus' ? 'focus' : ''}`} ref={pageRef} role="dialog" aria-label={`${symbol} chart`}>
@@ -515,47 +587,69 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
       </div>
 
       <div className="cp-body">
-        <div className="cp-tools" role="toolbar" aria-label="Drawing tools">
-          <ToolButton label="Select and move (Esc)" active={!tool} onClick={() => setTool(null)} icon="cursor" />
-          {TOOLS.map((t) => (
-            <ToolButton key={t.type} label={`${t.label}: ${t.help}`} active={tool === t.type} onClick={() => setTool(tool === t.type ? null : t.type)} icon={t.type} />
-          ))}
-          <span className="tool-sep" />
-          <ToolButton
-            label="Delete the selected drawing (Delete key)"
-            disabled={!selected}
-            onClick={() => {
-              updateDrawings(drawings.filter((d) => d.id !== selected));
+        <DrawingToolbar
+          tool={toolId}
+          onTool={(t) => {
+            setTool(t);
+            if (t && prefs.hideAll) setPrefs({ hideAll: false }); // drawing into a hidden layer would be confusing
+          }}
+          magnet={prefs.magnet}
+          onMagnet={(magnet) => setPrefs({ magnet })}
+          stay={prefs.stay}
+          onStay={(stay) => setPrefs({ stay })}
+          lockAll={prefs.lockAll}
+          onLockAll={(lockAll) => setPrefs({ lockAll })}
+          hideAll={prefs.hideAll}
+          onHideAll={(hideAll) => {
+            setPrefs({ hideAll });
+            if (hideAll) setSelected(null);
+          }}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={undo}
+          onRedo={redo}
+          count={drawings.length}
+          onClearAll={() => {
+            if (confirm(`Remove all ${drawings.length} drawings on ${symbol}? Undo (Ctrl+Z) brings them back.`)) {
+              commitDrawings([]);
               setSelected(null);
-            }}
-            icon="delete"
-          />
-          <ToolButton
-            label="Remove all drawings on this chart"
-            disabled={!drawings.length}
-            onClick={() => {
-              if (confirm(`Remove all ${drawings.length} drawings on ${symbol}?`)) {
-                updateDrawings([]);
-                setSelected(null);
-              }
-            }}
-            icon="clear"
-          />
-        </div>
+            }
+          }}
+        />
 
         <div className="cp-chart">
           <div className="chart-box" ref={box} />
-          {parts && data && (
+          {parts && data && box.current && panes?.chart === parts.chart && (
             <DrawingLayer
               chart={parts.chart}
-              series={parts.candles}
-              dates={data.bars.t}
+              box={box.current}
+              panes={panes.list}
+              bars={data.bars}
+              theme={theme}
               drawings={drawings}
-              onChange={updateDrawings}
+              onCommit={commitDrawings}
               tool={tool}
-              onToolDone={() => setTool(null)}
+              onToolDone={() => !prefs.stay && setTool(null)}
               selected={selected}
               onSelect={setSelected}
+              magnet={prefs.magnet}
+              lockAll={prefs.lockAll}
+              hideAll={prefs.hideAll}
+              editing={editing}
+              onEdit={setEditing}
+              onStep={setStep}
+            />
+          )}
+          {selectedDrawing && !editing && !prefs.hideAll && (
+            <DrawingStyleBar
+              drawing={selectedDrawing}
+              theme={theme}
+              locked={prefs.lockAll}
+              onStyle={(style) => updateSelected({ style })}
+              onLock={(locked) => updateSelected({ locked })}
+              onClone={cloneSelected}
+              onDelete={deleteSelected}
+              onEditText={() => setEditing({ id: selectedDrawing.id, isNew: false })}
             />
           )}
           {b && n > 0 && (
@@ -576,9 +670,11 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
                 const def = getDef(ind.id);
                 return (
                   <div key={ind.uid} className="lg-row lg-ind">
-                    {ind.id !== 'ttma' && <i className="swatch" style={{ background: colorOf(ind) }} aria-hidden />}
+                    {ind.id !== 'ttma' && ind.id !== 'csma' && <i className="swatch" style={{ background: colorOf(ind) }} aria-hidden />}
                     <span>{indicatorLabel(ind)}</span>
                     {lines && ind.id === 'tt' && <TrendTemplateLegend lines={lines} i={i} />}
+                    {lines && ind.id === 'cs' && <CanSlimLegend lines={lines} i={i} />}
+                    {lines && ind.id === 'csma' && <CanSlimLinesLegend lines={lines} i={i} colors={[colorOf(ind, 0), colorOf(ind, 1)]} />}
                     {lines &&
                       ind.id === 'ttma' &&
                       ind.params.map((p, k) => (
@@ -590,6 +686,8 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
                     {lines &&
                       ind.id !== 'tt' &&
                       ind.id !== 'ttma' &&
+                      ind.id !== 'cs' &&
+                      ind.id !== 'csma' &&
                       ind.id !== 'ratio' && // the panel's own axis carries the numbers; the legend just names it
                       def.lines
                         .filter((ln) => !ln.event && !ln.hidden)
@@ -606,11 +704,12 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, marketUp 
               })}
             </div>
           )}
-          {activeTool && (
+          {tool && hint && (
             <div className="tool-hint" role="status">
-              <b>{activeTool.label}:</b> {activeTool.help}. Press Esc to cancel.
+              <b>{tool.label}:</b> {hint} Esc to stop.
             </div>
           )}
+          {saveFailed && <p className="notice error cp-error">Drawings couldn’t be saved: this browser’s storage is full or blocked.</p>}
           {error && <p className="notice error cp-error">{error}</p>}
         </div>
       </div>
@@ -628,6 +727,39 @@ function TrendTemplateLegend({ lines, i }: { lines: Record<string, number[]>; i:
       <b>{score}/8</b>
       <span className="muted" title={`Not met:\n• ${full.join('\n• ')}`}>
         missing {missing.join(', ')}
+      </span>
+    </>
+  );
+}
+
+// the letters met on the hovered day
+function CanSlimLegend({ lines, i }: { lines: Record<string, number[]>; i: number }) {
+  const m = lines.m[i];
+  const missing = (['n', 's', 'l', 'm'] as const).filter((k) => lines[k][i] !== 1).map((k) => k.toUpperCase());
+  return (
+    <>
+      <b className={lines.score[i] === 4 ? 'up' : ''}>{lines.score[i]}/4</b>
+      <CanSlimLetters c={{ n: lines.n[i] === 1, s: lines.s[i] === 1, l: lines.l[i] === 1 }} m={Number.isFinite(m) ? m === 1 : null} />
+      {missing.length > 0 && <span className="muted">missing {missing.join(', ')}</span>}
+    </>
+  );
+}
+
+function CanSlimLinesLegend({ lines, i, colors }: { lines: Record<string, number[]>; i: number; colors: [string, string] }) {
+  const val = (k: string) => fmt.value(Number.isFinite(lines[k][i]) ? lines[k][i] : null);
+  return (
+    <>
+      <span className="lg-ma" title="Within 15% of the 52-week high (between the gold lines) meets N">
+        <i className="swatch" style={{ background: 'var(--gold)' }} aria-hidden />
+        52w high <b>{val('hi')}</b> · −15% <b>{val('n')}</b>
+      </span>
+      <span className="lg-ma">
+        <i className="swatch" style={{ background: colors[0] }} aria-hidden />
+        MA 50 <b>{val('ma50')}</b>
+      </span>
+      <span className="lg-ma">
+        <i className="swatch" style={{ background: colors[1] }} aria-hidden />
+        MA 200 <b>{val('ma200')}</b>
       </span>
     </>
   );
@@ -687,45 +819,18 @@ function SymbolSearch({ onPick }: { onPick: (symbol: string) => void }) {
   );
 }
 
-const ICONS: Record<string, React.ReactNode> = {
-  cursor: <path d="M5 3l11 6.5-4.6 1.2L9.5 15z" fill="currentColor" stroke="none" />,
-  trend: (
-    <>
-      <path d="M4 15L15 4" />
-      <circle cx="4" cy="15" r="1.8" />
-      <circle cx="15" cy="4" r="1.8" />
-    </>
-  ),
-  ray: (
-    <>
-      <path d="M3 15L16 4" />
-      <circle cx="3.5" cy="14.5" r="1.8" />
-      <path d="M12 4h4v4" />
-    </>
-  ),
-  hline: (
-    <>
-      <path d="M2 10h15" />
-      <circle cx="9.5" cy="10" r="1.8" />
-    </>
-  ),
-  rect: <rect x="3.5" y="5" width="12" height="9" rx="1" />,
-  fib: <path d="M3 4h13M3 8h13M3 11h13M3 15h13" />,
-  measure: (
-    <>
-      <path d="M9.5 3v13M6.5 6l3-3 3 3M6.5 13l3 3 3-3" />
-    </>
-  ),
-  delete: <path d="M5 5l9 9M14 5l-9 9" />,
-  clear: <path d="M4 6h11M8 6V4h3v2M6 6l1 10h5l1-10" />,
-};
-
-function ToolButton({ label, active, disabled, onClick, icon }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void; icon: string }) {
-  return (
-    <button className={`tool ${active ? 'on' : ''}`} title={label} aria-label={label} aria-pressed={active} disabled={disabled} onClick={onClick}>
-      <svg width="19" height="19" viewBox="0 0 19 19" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        {ICONS[icon]}
-      </svg>
-    </button>
-  );
+// what the next click does
+function toolHint(id: ToolId, step: number): string {
+  const t = toolById(id)!;
+  if (step === 0) return `${t.help}.`.replace('..', '.');
+  if (id === 'channel') return step === 1 ? 'Click the second point of the first line.' : 'Click a third point to set the width.';
+  if (id === 'fibext') return step === 1 ? 'Click where the move ended.' : 'Click where the pullback stopped.';
+  if (id === 'pitchfork') return step === 1 ? 'Click the high (or the low) of the swing.' : 'Click the low (or the high).';
+  if (id === 'triangle') return step === 1 ? 'Click the second corner.' : 'Click the third corner.';
+  if (id === 'curve' || id === 'arc') return step === 1 ? 'Click the point it bends through.' : 'Click where it ends.';
+  if (id === 'dcurve') return ['', 'Click the first bend.', 'Click the second bend.', 'Click where it ends.'][step];
+  if (id === 'path') return `${step} ${step === 1 ? 'point' : 'points'}. Click the next one; double-click or Enter to finish, Backspace to take one back.`;
+  if (id === 'callout') return 'Click where the box goes, then type.';
+  if (id === 'fibtz') return 'Click one zone’s width along.';
+  return 'Click the second point. Shift keeps a line level.';
 }

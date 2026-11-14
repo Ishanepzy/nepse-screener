@@ -39,15 +39,57 @@ export const CANSLIM = {
   missing: 'C, A and I need quarterly earnings and institutional holdings, which this site has no data for',
 };
 
-// up-day volume over down-day volume for the last n bars; null when nothing traded down (or at all)
-export function upDownVolume(b: Bars, n = 50): number | null {
+// CAN SLIM's S looks at this many sessions
+const UD_BARS = 50;
+
+// volume traded on up days and on down days over the last n bars
+export function upDownSums(b: Bars, n = UD_BARS): { up: number; down: number } {
   let up = 0;
   let down = 0;
   for (let i = Math.max(1, b.c.length - n); i < b.c.length; i++) {
     if (b.c[i] > b.c[i - 1]) up += b.v[i];
     else if (b.c[i] < b.c[i - 1]) down += b.v[i];
   }
+  return { up, down };
+}
+
+// up-day volume over down-day volume for the last n bars; null when nothing traded down (or at all)
+export function upDownVolume(b: Bars, n = UD_BARS): number | null {
+  const { up, down } = upDownSums(b, n);
   return down > 0 ? up / down : null;
+}
+
+// highest high of the last 52 weeks on every bar
+export const high52Series = (b: Bars) => rollingExtreme(b.h, YEAR_BARS, (a, x) => a >= x);
+
+// The CAN SLIM letters prices can check, on every bar: 1 = met. L needs b.rs and M needs b.mkt; without them
+// those letters read 0 (and M NaN).
+export function canslimSeries(b: Bars): { score: number[]; n: number[]; s: number[]; l: number[]; m: number[] } {
+  const len = b.c.length;
+  const hi = high52Series(b);
+  const out = { score: new Array<number>(len), n: new Array<number>(len), s: new Array<number>(len), l: new Array<number>(len), m: new Array<number>(len) };
+  // signed volume: + on an up day, - on a down day
+  const vol = (i: number) => (i < 1 ? 0 : b.c[i] > b.c[i - 1] ? b.v[i] : b.c[i] < b.c[i - 1] ? -b.v[i] : 0);
+  let up = 0;
+  let down = 0;
+  for (let i = 0; i < len; i++) {
+    const add = vol(i);
+    if (add > 0) up += add;
+    else down -= add;
+    const drop = vol(i - UD_BARS); // the bar leaving the 50-session window
+    if (drop > 0) up -= drop;
+    else down += drop;
+    const n = b.c[i] >= hi[i] * 0.85 ? 1 : 0;
+    const s = up > down ? 1 : 0;
+    const l = (b.rs?.[i] ?? NaN) >= 80 ? 1 : 0;
+    const m = b.mkt?.[i] ?? NaN;
+    out.n[i] = n;
+    out.s[i] = s;
+    out.l[i] = l;
+    out.m[i] = m;
+    out.score[i] = n + s + l + (m === 1 ? 1 : 0);
+  }
+  return out;
 }
 
 const DAY = 86_400_000;
@@ -430,6 +472,7 @@ export function buildProfiles(stocks: Map<string, ProfileInput>): Map<string, Pr
     let stageWeeks = 0;
     for (let i = stages.length - 1; i >= 0 && stages[i].stage === stage; i--) stageWeeks++;
     const ttChecks = trendTemplate(bars, rs, hi, lo);
+    const ud = upDownSums(bars);
     out.set(symbol, {
       rs,
       rsScore: scores.get(symbol) ?? null,
@@ -437,10 +480,10 @@ export function buildProfiles(stocks: Map<string, ProfileInput>): Map<string, Pr
       stageWeeks,
       tt: ttChecks.filter(Boolean).length,
       ttChecks,
-      udVol: upDownVolume(bars),
+      udVol: ud.down > 0 ? ud.up / ud.down : null,
       canslim: {
         n: hi != null && bars.c[n - 1] >= hi * 0.85,
-        s: (upDownVolume(bars) ?? 0) > 1,
+        s: ud.up > ud.down,
         l: rs != null && rs >= 80,
       },
       high52: hi,

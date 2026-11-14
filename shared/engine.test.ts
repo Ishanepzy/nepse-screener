@@ -105,8 +105,47 @@ test('market trend (CAN SLIM M) and the CAN SLIM filter', () => {
   assert.equal(mk(rising).market().uptrend, true);
   assert.equal(mk(bars(t, t.map((_, i) => 2000 - i))).market().uptrend, false);
   assert.equal(mk(bars(t.slice(-100), t.slice(-100).map(() => 1000))).market().uptrend, null); // under 200 days
-  // A only ever rises, so it never has down volume: S fails and the filter drops it
+  // A only ever rises: no down volume at all, which is more volume on up days than down
   const e = mk(rising);
-  assert.equal(e.screen({ match: 'all', conditions: [], universe: { canslim: true } }).rows.length, 0);
   assert.equal(e.screen({ match: 'all', conditions: [] }).rows[0].canslim.n, true);
+  assert.equal(e.screen({ match: 'all', conditions: [] }).rows[0].canslim.s, true);
+  // B creeps up over its last 50 sessions, but trades three times the volume on its down days: S fails
+  const c: number[] = [];
+  const v: number[] = [];
+  t.forEach((_, i) => {
+    const down = i >= 210 && i % 2 === 1;
+    c.push(i < 210 ? 100 + i : c[i - 1] + (down ? -1 : 2));
+    v.push(down ? 300 : 100);
+  });
+  const heavy = new Engine({ asOf: t.at(-1)!, builtAt: null, companies: new Map([['B', co('B')]]), bars: new Map([['B', { t, c, o: c, h: c, l: c, v }]]), index: rising });
+  const row = heavy.screen({ match: 'all', conditions: [] }).rows[0];
+  assert.equal(row.canslim.n, true);
+  assert.equal(row.canslim.s, false);
+  assert.equal(heavy.screen({ match: 'all', conditions: [], universe: { canslim: true } }).rows.length, 0);
+});
+
+test("CAN SLIM's M on every bar follows the index's own sessions, also for a stock that skips days", () => {
+  const t = Array.from({ length: 280 }, (_, i) => new Date(Date.UTC(2025, 0, 1) + i * 86_400_000).toISOString().slice(0, 10));
+  // up for 240 sessions, then a sharp fall that breaks the 50-day average
+  const ic = t.map((_, i) => (i < 240 ? 1000 + i * 2 : 1480 - (i - 240) * 15));
+  const index = bars(t, ic);
+  const st = t.filter((_, i) => i % 3 !== 1);
+  const e = new Engine({
+    asOf: t.at(-1)!,
+    builtAt: null,
+    companies: new Map([['A', { symbol: 'A', name: 'A', sector: 'Hydro Power', active: true }]]),
+    bars: new Map([['A', bars(st, st.map(() => 100))]]),
+    index,
+  });
+  const mkt = e.ds.bars.get('A')!.mkt!;
+  const s50 = ic.map((_, i) => (i < 49 ? NaN : ic.slice(i - 49, i + 1).reduce((a, x) => a + x, 0) / 50));
+  const s200 = ic.map((_, i) => (i < 199 ? NaN : ic.slice(i - 199, i + 1).reduce((a, x) => a + x, 0) / 200));
+  st.forEach((d, k) => {
+    const j = t.indexOf(d);
+    const want = j < 199 ? NaN : ic[j] > s50[j] && s50[j] > s200[j] ? 1 : 0;
+    if (Number.isNaN(want)) assert.ok(Number.isNaN(mkt[k]), d);
+    else assert.equal(mkt[k], want, d);
+  });
+  assert.ok(mkt.includes(1) && mkt.includes(0));
+  assert.equal(mkt.at(-1), e.market().uptrend ? 1 : 0);
 });

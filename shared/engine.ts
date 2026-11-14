@@ -51,7 +51,9 @@ export function isEquity(c: Pick<Company, 'name' | 'sector'>): boolean {
   return !NON_EQUITY_NAMES.test(c.name);
 }
 
-const usesTrendTemplate = (conditions: Condition[]) => conditions.some((c) => c.left.id === 'tt' || c.right.id === 'tt');
+// the trend template and CAN SLIM rule panels read the RS rating on every bar
+const NEEDS_RS = new Set(['tt', 'cs']);
+const usesTrendTemplate = (conditions: Condition[]) => conditions.some((c) => NEEDS_RS.has(c.left.id) || NEEDS_RS.has(c.right.id));
 
 export function parseConditions(raw: unknown): Condition[] {
   if (!Array.isArray(raw)) throw new Error('conditions must be an array');
@@ -99,18 +101,39 @@ export class Engine {
 
   constructor(ds: Dataset) {
     this.ds = ds;
-    for (const b of ds.bars.values()) b.ix = this.indexCloses(b.t);
+    for (const b of ds.bars.values()) {
+      b.ix = this.indexCloses(b.t);
+      b.mkt = this.indexUptrendOn(b.t);
+    }
   }
 
   // index close on or before each date
   private indexCloses(dates: string[]): number[] {
+    return this.onIndexDates(dates, this.ds.index?.c ?? []);
+  }
+
+  // CAN SLIM's M on or before each date. Worked out on the index's own sessions, as in market(), so a stock
+  // that skipped days still agrees with it.
+  private indexUptrendOn(dates: string[]): number[] {
+    if (!this.indexUp) {
+      const c = this.ds.index?.c ?? [];
+      const s50 = sma(c, 50);
+      const s200 = sma(c, 200);
+      this.indexUp = c.map((x, i) => (i < 199 ? NaN : x > s50[i] && s50[i] > s200[i] ? 1 : 0));
+    }
+    return this.onIndexDates(dates, this.indexUp);
+  }
+  private indexUp: number[] | null = null;
+
+  // values[j] belongs to the index's j-th session: for each date, the value on or before it
+  private onIndexDates(dates: string[], values: number[]): number[] {
     const ix = this.ds.index;
     if (!ix?.t.length) return dates.map(() => NaN);
     const out: number[] = [];
     let j = 0;
     for (const d of dates) {
       while (j < ix.t.length && ix.t[j] <= d) j++;
-      out.push(j > 0 ? ix.c[j - 1] : NaN);
+      out.push(j > 0 ? values[j - 1] : NaN);
     }
     return out;
   }
@@ -462,6 +485,7 @@ export class Engine {
         c: [...b.c.slice(0, keep), q.close],
         v: [...b.v.slice(0, keep), q.volume],
         ix: [...(b.ix ?? this.indexCloses(b.t)).slice(0, keep), ...this.indexCloses([date])],
+        mkt: [...(b.mkt ?? this.indexUptrendOn(b.t)).slice(0, keep), ...this.indexUptrendOn([date])],
       });
       this.caches.delete(q.symbol);
       changed++;
