@@ -5,6 +5,7 @@ import { ConditionRow } from './ConditionRow.tsx';
 import { defaultOperand } from './OperandPicker.tsx';
 import { NumberField } from './NumberField.tsx';
 import { usePopover } from '../usePopover.ts';
+import { useSignedIn } from '../cloud.ts';
 
 const RS_OPTIONS = [
   { label: 'Any', value: 0 },
@@ -138,6 +139,7 @@ function SavedMenu({
   onLoad: (s: SavedScan) => void;
   onDelete: (name: string) => void;
 }) {
+  const signedIn = useSignedIn();
   const { open, setOpen, ref } = usePopover();
   const [name, setName] = useState('');
   return (
@@ -147,7 +149,7 @@ function SavedMenu({
       </button>
       {open && (
         <div className="popover saved-pop">
-          <p className="pop-help">Save these conditions and filters under a name, then reopen them any time. They're kept in this browser only.</p>
+          <p className="pop-help">Save these conditions and filters under a name, then reopen them any time. {signedIn ? 'They’re saved to your account.' : 'They’re kept in this browser only; sign in to keep them in your account.'}</p>
           <form
             className="save-row"
             onSubmit={(e) => {

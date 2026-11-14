@@ -3,6 +3,7 @@ import type { ScreenResponse } from '../../shared/types.ts';
 import type { Stage } from '../../shared/analysis.ts';
 import { api } from '../api.ts';
 import { useWatchlist, watchlist } from '../watchlist.ts';
+import { useSignedIn } from '../cloud.ts';
 import { ResultsTable } from './ResultsTable.tsx';
 import { StockInput } from './StockInput.tsx';
 
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function WatchlistPage({ version, onOpenChart }: Props) {
+  const signedIn = useSignedIn();
   const symbols = useWatchlist();
   const [result, setResult] = useState<ScreenResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,8 +39,8 @@ export function WatchlistPage({ version, onOpenChart }: Props) {
           <div>
             <h2 className="section-title">Watchlist</h2>
             <p className="muted small">
-              Star <span className="star-inline">☆</span> any stock in a table or on its chart to follow it here, with live prices during the session. Kept in this
-              browser.
+              Star <span className="star-inline">☆</span> any stock in a table or on its chart to follow it here, with live prices during the session.{' '}
+              {signedIn ? 'Saved to your account.' : 'Kept in this browser; sign in to keep it in your account.'}
             </p>
           </div>
           <label className="field">

@@ -14,13 +14,20 @@ export function load(key: string): unknown {
   }
 }
 
+// Signed in, every save also goes to the account (cloud.ts sets this).
+let afterSave: ((key: string) => void) | null = null;
+export const setSaveHook = (fn: ((key: string) => void) | null) => {
+  afterSave = fn;
+};
+
 export function save(key: string, value: unknown): boolean {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-    return true;
   } catch {
     return false;
   }
+  afterSave?.(key);
+  return true;
 }
 
 // Calls fn when another tab changes `key`. Returns the unsubscribe.

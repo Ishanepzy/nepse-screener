@@ -4,3 +4,6 @@ data/
 public/data/
 *.tmp
 *.log
+# Supabase settings for local runs (see .env.example)
+.env.local
+.env.*.local

@@ -1748,6 +1748,12 @@ td.price {
     display: none;
   }
 }
+@media (min-width: 721px) and (max-width: 1180px) {
+  /* the logo alone, so the tabs and the account button fit */
+  .brand h1 {
+    display: none;
+  }
+}
 .tabs a {
   padding: 7px 13px;
   border-radius: var(--radius-sm);
@@ -2601,4 +2607,74 @@ td.old-chg {
   .bt-chart {
     height: 260px;
   }
+}
+
+/* ---------- account ---------- */
+
+.account .popover {
+  left: auto;
+  right: 0;
+}
+.account-pop {
+  width: min(320px, calc(100vw - 32px));
+  padding: 6px 14px 14px;
+}
+.account-pop form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.account-pop p {
+  margin: 0 0 10px;
+  white-space: normal;
+}
+.account-pop form p {
+  margin: 0;
+}
+.account-pop .pop-sub {
+  margin: 8px 0 6px;
+}
+.account-input {
+  width: 100%;
+}
+.account-email {
+  font-weight: 600;
+  word-break: break-all;
+}
+.avatar {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+  cursor: pointer;
+}
+/* a change that hasn't reached the account */
+.avatar.warn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--neutral);
+  border: 2px solid var(--surface);
+}
+.account-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.account-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.account-pop form .link {
+  align-self: flex-start;
 }

@@ -6,6 +6,7 @@ import { NO_COSTS, loadRates, saveRates } from '../costsStore.ts';
 import { nepalNow } from '../../shared/clock.ts';
 import { load, onOtherTab, save } from '../storage.ts';
 import * as fmt from '../format.ts';
+import { useSignedIn } from '../cloud.ts';
 import { NumberField } from './NumberField.tsx';
 import { RatesEditor } from './RatesEditor.tsx';
 import { StockInput } from './StockInput.tsx';
@@ -52,6 +53,7 @@ interface Props {
 }
 
 export function JournalPage({ version, onOpenChart }: Props) {
+  const signedIn = useSignedIn();
   const [trades, setTradesState] = useState<Trade[]>(loadTrades);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [rates, setRatesState] = useState<CostRates>(loadRates);
@@ -134,7 +136,8 @@ export function JournalPage({ version, onOpenChart }: Props) {
           <div>
             <h2 className="section-title">Trade journal</h2>
             <p className="muted small">
-              Log each buy and sale; sales close your oldest shares first. Saved in this browser only: back it up to move it to another device.
+              Log each buy and sale; sales close your oldest shares first.{' '}
+              {signedIn ? 'Saved to your account, on every device you sign in on.' : 'Saved in this browser only: sign in, or back it up, to have it on another device.'}
             </p>
           </div>
           <div className="journal-actions">

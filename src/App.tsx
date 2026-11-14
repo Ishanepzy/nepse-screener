@@ -31,6 +31,7 @@ import { LeadersPage } from './components/LeadersPage.tsx';
 import { CalculatorPage } from './components/CalculatorPage.tsx';
 import { JournalPage } from './components/JournalPage.tsx';
 import { BacktestPage } from './components/BacktestPage.tsx';
+import { AccountMenu } from './components/AccountMenu.tsx';
 import { WatchlistPage } from './components/WatchlistPage.tsx';
 import { RotationPage } from './components/RotationPage.tsx';
 import * as fmt from './format.ts';
@@ -281,6 +282,7 @@ export function App() {
               {info?.asOf ? (waiting ? `${info.asOf} close · no trades yet today` : `Prices as of ${info.asOf}`) : 'Loading data…'}
             </span>
           )}
+          <AccountMenu />
           <button
             className="icon-btn"
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}

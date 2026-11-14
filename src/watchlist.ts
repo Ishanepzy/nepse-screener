@@ -10,7 +10,10 @@ function read(): string[] {
   return Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];
 }
 
-let list = read();
+// Read on first use, not when this file loads: signed in, the account's copy only lands in storage after the
+// modules have loaded (main.tsx), and a list read too early would show stale stars and save them over the account's.
+let list: string[] | null = null;
+const current = () => (list ??= read());
 
 function set(next: string[]) {
   list = next;
@@ -24,10 +27,10 @@ onOtherTab(KEY, () => {
 });
 
 export const watchlist = {
-  get: () => list,
-  has: (symbol: string) => list.includes(symbol),
+  get: current,
+  has: (symbol: string) => current().includes(symbol),
   // newest first
-  toggle: (symbol: string) => set(list.includes(symbol) ? list.filter((s) => s !== symbol) : [symbol, ...list]),
+  toggle: (symbol: string) => set(current().includes(symbol) ? current().filter((s) => s !== symbol) : [symbol, ...current()]),
   subscribe: (f: () => void) => {
     listeners.add(f);
     return () => {
