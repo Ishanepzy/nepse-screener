@@ -30,6 +30,7 @@ import { MarketBand } from './components/MarketBand.tsx';
 import { LeadersPage } from './components/LeadersPage.tsx';
 import { CalculatorPage } from './components/CalculatorPage.tsx';
 import { JournalPage } from './components/JournalPage.tsx';
+import { BacktestPage } from './components/BacktestPage.tsx';
 import { WatchlistPage } from './components/WatchlistPage.tsx';
 import { RotationPage } from './components/RotationPage.tsx';
 import * as fmt from './format.ts';
@@ -113,8 +114,11 @@ export function App() {
     setPage({ page: next, symbol });
     window.scrollTo(0, 0);
   }, []);
-  const openChart = useCallback((symbol: string, list: string[]) => {
+  // a chart opened from the backtest marks that test's buy signals
+  const [chartConds, setChartConds] = useState<Condition[]>([]);
+  const openChart = useCallback((symbol: string, list: string[], conditions: Condition[] = []) => {
     setChartList(list);
+    setChartConds(conditions);
     history.pushState(null, '', chartHash(symbol));
     chartPushed.current = true;
     setChart(symbol);
@@ -343,6 +347,16 @@ export function App() {
             scanLabel={PRESETS.find((p) => p.id === preset)?.name ?? 'Your scan'}
           />
         )}
+        {page.page === 'backtest' && (
+          <BacktestPage
+            version={version}
+            theme={theme}
+            scanConditions={scan.conditions}
+            scanMatch={scan.match}
+            scanSymbols={shownSymbols}
+            onOpenChart={openChart}
+          />
+        )}
         {page.page === 'journal' && <JournalPage version={version} onOpenChart={openChart} />}
         {page.page === 'calculator' && (
           <CalculatorPage
@@ -365,7 +379,7 @@ export function App() {
       {chart && (
         <ChartPage
           symbol={chart}
-          conditions={page.page === 'screener' ? scan.conditions : []}
+          conditions={page.page === 'screener' ? scan.conditions : chartConds}
           trendTemplate={page.page === 'screener' && !!scan.universe.trendTemplate}
           canslim={page.page === 'screener' && !!scan.universe.canslim}
           marketUp={market?.uptrend ?? null}

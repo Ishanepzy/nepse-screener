@@ -1728,6 +1728,25 @@ td.price {
   display: flex;
   gap: 2px;
   margin-left: 10px;
+  /* on a narrow window the row scrolls sideways instead of pushing the page wider */
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+@media (max-width: 1180px) {
+  .tabs a {
+    padding: 7px 8px;
+  }
+  .topbar {
+    gap: 10px;
+  }
+  /* room for all the tabs; the market panel shows the data's date too, and the live badge stays */
+  .data-status > .muted {
+    display: none;
+  }
 }
 .tabs a {
   padding: 7px 13px;
@@ -2506,4 +2525,80 @@ td.old-chg {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* ---------- backtest ---------- */
+
+.backtest {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.bt-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.bt-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.bt-block .match-line {
+  margin: 0;
+}
+.bt-block .conds {
+  margin: 0;
+}
+.bt-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 22px;
+}
+.bt-rule {
+  max-width: 100%;
+}
+.bt-run {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 20px;
+}
+.bt-results {
+  padding: 20px 24px;
+}
+.bt-results .section-title .muted {
+  font-weight: 500;
+}
+.bt-chart {
+  height: 340px;
+  margin-top: 18px;
+}
+.bt-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.chip.static {
+  cursor: default;
+}
+.bt-caveat {
+  margin: 14px 0 0;
+  max-width: 820px;
+}
+@media (max-width: 720px) {
+  .bt-results {
+    padding: 16px;
+  }
+  .bt-chart {
+    height: 260px;
+  }
 }

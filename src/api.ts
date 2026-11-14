@@ -2,6 +2,7 @@
 import type { ChartResponse, Condition, LeadersResponse, LiveQuote, Market, RotationResponse, ScreenRequest, ScreenResponse } from '../shared/types.ts';
 import { Engine, type OverviewItem } from '../shared/engine.ts';
 import { decodeSnapshot, type SnapshotFile } from '../shared/snapshot.ts';
+import type { BacktestRequest, BacktestResult } from '../shared/backtest.ts';
 
 export type { OverviewItem };
 
@@ -41,6 +42,12 @@ export const api = {
   leaders: async (minTurnover?: number): Promise<LeadersResponse> => (await engine()).leaders(minTurnover),
   watch: async (symbols: string[]): Promise<ScreenResponse> => (await engine()).watch(symbols),
   rotation: async (symbols: string[] | null): Promise<RotationResponse> => (await engine()).rotation(symbols),
+  backtest: async (req: BacktestRequest): Promise<BacktestResult> => (await engine()).backtest(req),
+  // first and last session in the data, for the backtest's date range
+  range: async (): Promise<{ from: string; to: string } | null> => {
+    const ix = (await engine()).ds.index;
+    return ix?.t.length ? { from: ix.t[0], to: ix.t[ix.t.length - 1] } : null;
+  },
   lastPrices: async (): Promise<Map<string, { close: number; date: string }>> => {
     const m = new Map<string, { close: number; date: string }>();
     for (const [s, b] of (await engine()).ds.bars) if (b.c.length) m.set(s, { close: b.c[b.c.length - 1], date: b.t[b.t.length - 1] });

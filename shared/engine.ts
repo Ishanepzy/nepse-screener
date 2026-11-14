@@ -34,6 +34,7 @@ import {
   type Stage,
 } from './analysis.ts';
 import { caiSeries, type Fundamentals } from './fundamentals.ts';
+import { runBacktest, type BacktestRequest, type BacktestResult } from './backtest.ts';
 
 export interface Dataset {
   asOf: string | null;
@@ -386,6 +387,44 @@ export class Engine {
     markers.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
     return { symbol, name: co.name, sector: co.sector ?? 'Unknown', bars, levels, markers, profile: this.profiles().get(symbol) ?? null };
+  }
+
+  // A buy rule tested on past prices (see shared/backtest.ts): the given stocks, or every company share.
+  backtest(req: BacktestRequest): BacktestResult {
+    const entry = parseConditions(req.entry?.conditions ?? []);
+    const exitConditions = parseConditions(req.exitConditions ?? []);
+    // the trend template and CAN SLIM panels read each day's RS rating
+    if (usesTrendTemplate([...entry, ...exitConditions])) this.attachRsAll();
+    const stocks = (req.symbols ?? [...this.ds.bars.keys()]).flatMap((symbol) => {
+      const bars = this.ds.bars.get(symbol);
+      const co = this.ds.companies.get(symbol);
+      if (!bars || !co || (!req.symbols && !isEquity(co))) return [];
+      return [{ symbol, bars }];
+    });
+    const num = (x: unknown, lo: number, hi: number, fallback: number) => {
+      const n = Number(x);
+      return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback;
+    };
+    const opt = (x: unknown, hi: number) => (x == null || x === '' || !(Number(x) > 0) ? null : Math.min(hi, Number(x)));
+    const day = (x: unknown) => (typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : null);
+    return runBacktest(stocks, this.ds.index, {
+      symbols: req.symbols,
+      rates: req.rates,
+      entry: { conditions: entry, match: req.entry?.match === 'any' ? 'any' : 'all' },
+      exitConditions,
+      stopPct: opt(req.stopPct, 99),
+      targetPct: opt(req.targetPct, 10_000),
+      trailPct: opt(req.trailPct, 99),
+      maxDays: opt(req.maxDays, 5000),
+      from: day(req.from),
+      to: day(req.to),
+      capital: num(req.capital, 1000, 1e12, 1_000_000),
+      positionPct: num(req.positionPct, 1, 100, 10),
+      maxPositions: Math.round(num(req.maxPositions, 1, 100, 10)),
+      minHold: Math.round(num(req.minHold, 1, 30, 2)),
+      fees: req.fees !== false,
+      minTurnover: num(req.minTurnover, 0, 1e12, 0),
+    });
   }
 
   // Relative rotation of the given stocks against the index, or of every company share still trading.

@@ -9,6 +9,7 @@ Live: https://ishanepzy.github.io/nepse-screener/
 - RS rating, Weinstein stage, Minervini trend template and O'Neil's CAN SLIM for every stock
 - charts with indicators and drawing tools
 - relative rotation graph against the NEPSE index
+- backtests of buy rules, with fees, stops and one account
 - watchlist, leaders and laggards by sector, position size calculator, trade journal
 - live prices during market hours
 
@@ -101,6 +102,16 @@ market panel, and O'Neil would hold off buying while it is not in an uptrend. On
 draws the 52-week high, the line 15% under it and the 50- and 200-day averages, with a panel of all seven letters
 on every day. For past days it uses only what was out then: a quarter's results count from a month after the
 quarter ends (SEBON's deadline), and a holdings reading stands for the month before it was taken.
+
+**Backtest.** Tests a buy rule on past prices with one account: any of the screener's conditions (or a quick scan,
+the trend template, or CAN SLIM's price letters), with a stop, target, trailing stop, time limit and sell rules.
+A signal at a close buys at the next open and a sell rule sells at the next open, so a test never acts on a price
+before it happened; stops and targets sell inside the day, and when one day reaches both, the stop counts. A run of
+days on which the rule holds buys at most once, so a stopped-out stock waits for a fresh signal. It sizes each
+position as a share of the account, caps how many are open, skips thinly traded stocks, waits two sessions before
+selling (T+2), and takes NEPSE's fees and capital gains tax off every trade. Results are compared with holding the
+NEPSE index. Fills at the open, no 10% price-limit check, and only stocks still listed today, so the figures lean a
+little optimistic.
 
 **Relative rotation.** Each stock against the NEPSE index on weekly closes. RS-Ratio (across) is 100 plus the
 z-score of price / index over 10 weeks; RS-Momentum (up) is 100 plus the z-score of RS-Ratio's weekly change over

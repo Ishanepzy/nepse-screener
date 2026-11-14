@@ -125,3 +125,70 @@ export function screenSymbol(bars: Bars, conditions: Condition[], match: 'all' |
   const pass = conditions.length > 0 && (match === 'all' ? hits.every((h) => h.pass) : hits.some((h) => h.pass));
   return { pass, hits };
 }
+
+// evaluate() for every bar at once: out[i] = 1 where it would pass if bar i were the last. For backtests, which
+// need the signal as it stood each day.
+export function conditionSeries(bars: Bars, c: Condition, cache: SeriesCache): Uint8Array {
+  const len = bars.c.length;
+  const out = new Uint8Array(len);
+  const L = getLine(bars, c.left, cache);
+  const Rs = getLine(bars, c.right, cache);
+  const f = c.factor ?? 1;
+  const R = (i: number) => Rs[i] * f;
+  const n = c.within ?? 1;
+  const gt = (i: number) => L[i] > R(i);
+  const lt = (i: number) => L[i] < R(i);
+  // ok(i) true for n bars in a row, ending at i, none of them bar 0
+  const runs = (ok: (i: number) => boolean) => {
+    let run = 0;
+    for (let i = 1; i < len; i++) {
+      run = ok(i) ? run + 1 : 0;
+      if (run >= n) out[i] = 1;
+    }
+  };
+  // the latest bar, at or before i and within n of it, where `at` holds; -1 if none
+  const lastWithin = (at: (i: number) => boolean, first: number) => {
+    let seen = -Infinity;
+    for (let i = first; i < len; i++) {
+      if (at(i)) seen = i;
+      if (i - seen < n) out[i] = 1;
+    }
+  };
+  switch (c.op) {
+    case 'crossAbove':
+    case 'crossBelow': {
+      const up = c.op === 'crossAbove';
+      lastWithin((i) => (up ? gt(i) && L[i - 1] <= R(i - 1) : lt(i) && L[i - 1] >= R(i - 1)), 1);
+      // and still on the right side on the bar itself, unless that isn't asked
+      if (c.holds !== false) for (let i = 0; i < len; i++) if (out[i] && !(up ? gt(i) : lt(i))) out[i] = 0;
+      break;
+    }
+    case 'above':
+      runs(gt);
+      break;
+    case 'below':
+      runs(lt);
+      break;
+    case 'rising':
+      runs((i) => L[i] > L[i - 1]);
+      break;
+    case 'falling':
+      runs((i) => L[i] < L[i - 1]);
+      break;
+    case 'fired':
+      lastWithin((i) => L[i] > 0, 0);
+      // evaluate() needs two bars before it says anything
+      out[0] = 0;
+      break;
+  }
+  return out;
+}
+
+// all (or any) of the conditions on each bar; nothing at all without conditions
+export function signalSeries(bars: Bars, conditions: Condition[], match: 'all' | 'any', cache: SeriesCache): Uint8Array {
+  const out = new Uint8Array(bars.c.length);
+  if (!conditions.length) return out;
+  const each = conditions.map((c) => conditionSeries(bars, c, cache));
+  for (let i = 0; i < out.length; i++) out[i] = (match === 'all' ? each.every((s) => s[i]) : each.some((s) => s[i])) ? 1 : 0;
+  return out;
+}
