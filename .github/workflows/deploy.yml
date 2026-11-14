@@ -32,7 +32,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # the first run with an empty cache reads every company's results (about 15 minutes); later runs take a few
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -45,7 +46,8 @@ jobs:
       - run: npm run type-check
       - run: npm test
 
-      # data/ holds sector lookups and the active-symbol list between runs, so a daily run only re-downloads prices.
+      # data/ holds sector lookups, the active-symbol list and company earnings between runs, so a daily run only
+      # re-downloads prices and the results of companies that filed something new.
       - name: Restore price cache
         uses: actions/cache/restore@v6
         with:
@@ -53,7 +55,7 @@ jobs:
           key: nepse-data-${{ github.run_id }}
           restore-keys: nepse-data-
 
-      - name: Download prices
+      - name: Download prices and earnings
         run: npm run data -- ${{ inputs.discover && '--discover' || '' }}
 
       - name: Save price cache

@@ -538,7 +538,7 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, canslim =
               Trend <TrendTemplateBadge tt={data.profile.tt} checks={data.profile.ttChecks} />
             </span>
             <span className="cp-badge">
-              <CanSlimLetters c={data.profile.canslim} m={marketUp} />
+              <CanSlimLetters c={data.profile.canslim} m={marketUp} why={data.profile.canslimWhy} />
             </span>
           </div>
         )}
@@ -739,7 +739,8 @@ function CanSlimLegend({ lines, i }: { lines: Record<string, number[]>; i: numbe
   return (
     <>
       <b className={lines.score[i] === 4 ? 'up' : ''}>{lines.score[i]}/4</b>
-      <CanSlimLetters c={{ n: lines.n[i] === 1, s: lines.s[i] === 1, l: lines.l[i] === 1 }} m={Number.isFinite(m) ? m === 1 : null} />
+      {/* the panel tracks the letters prices answer; C, A and I are the latest filings, in the header */}
+      <CanSlimLetters c={{ c: null, a: null, n: lines.n[i] === 1, s: lines.s[i] === 1, l: lines.l[i] === 1, i: null }} m={Number.isFinite(m) ? m === 1 : null} />
       {missing.length > 0 && <span className="muted">missing {missing.join(', ')}</span>}
     </>
   );

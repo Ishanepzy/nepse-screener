@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { CANSLIM, STAGE_NAMES, TREND_TEMPLATE, type Stage } from '../../shared/analysis.ts';
+import { CANSLIM, STAGE_NAMES, TREND_TEMPLATE, type CanSlim, type Stage } from '../../shared/analysis.ts';
 
 // --sec for a .sector-chip; sectors without a colour of their own (funds, debentures) fall back to grey
 export const sectorStyle = (name: string) => ({ '--sec': `var(--sec-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}, var(--muted))` }) as CSSProperties;
@@ -37,20 +37,29 @@ export function TrendTemplateBadge({ tt, checks }: { tt: number; checks?: boolea
   );
 }
 
-// The seven CAN SLIM letters: green = met, dim = not met, faint = no data (C, A, I; M before the index has history).
-export function CanSlimLetters({ c, m }: { c: { n: boolean; s: boolean; l: boolean }; m: boolean | null }) {
+// The seven CAN SLIM letters: green = met, dim = not met, faint = no data (no filed results or holdings; M before
+// the index has history). `why` says how C, A and I came out; without it the tooltip gives the rules.
+export function CanSlimLetters({ c, m, why }: { c: CanSlim; m: boolean | null; why?: { c: string; a: string; i: string } }) {
   const state = (x: boolean | null) => (x == null ? 'na' : x ? 'on' : 'off');
   const letters: [string, boolean | null][] = [
-    ['C', null],
-    ['A', null],
+    ['C', c.c],
+    ['A', c.a],
     ['N', c.n],
     ['S', c.s],
     ['L', c.l],
-    ['I', null],
+    ['I', c.i],
     ['M', m],
   ];
   const line = (ok: boolean | null, text: string) => `${ok == null ? '–' : ok ? '✓' : '✗'} ${text}`;
-  const title = [line(c.n, CANSLIM.n), line(c.s, CANSLIM.s), line(c.l, CANSLIM.l), line(m, CANSLIM.m), `– ${CANSLIM.missing}`].join('\n');
+  const title = [
+    line(c.c, why?.c || CANSLIM.c),
+    line(c.a, why?.a || CANSLIM.a),
+    line(c.n, CANSLIM.n),
+    line(c.s, CANSLIM.s),
+    line(c.l, CANSLIM.l),
+    line(c.i, why?.i || CANSLIM.i),
+    line(m, CANSLIM.m),
+  ].join('\n');
   return (
     <span className="canslim" title={title}>
       {letters.map(([l, ok]) => (

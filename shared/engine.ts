@@ -21,7 +21,19 @@ import { crossIndices, normalizeCondition, screenSymbol, type SeriesCache } from
 import { getDef, isStateLine, seriesKey } from './registry.ts';
 import { sma } from './indicators.ts';
 import { PRESETS } from './presets.ts';
-import { ROTATION_WEEKS, buildProfiles, quadrantOf, rotationSeries, rsRatingHistory, rsRatingSeries, type Profile, type Stage } from './analysis.ts';
+import {
+  ROTATION_WEEKS,
+  buildProfiles,
+  meetsCanSlim,
+  quadrantOf,
+  rotationSeries,
+  rsRatingHistory,
+  rsRatingSeries,
+  type Profile,
+  type ProfileInput,
+  type Stage,
+} from './analysis.ts';
+import type { Fundamentals } from './fundamentals.ts';
 
 export interface Dataset {
   asOf: string | null;
@@ -30,6 +42,8 @@ export interface Dataset {
   bars: Map<string, Bars>;
   // the index is not a tradeable symbol, so it stays out of bars
   index: Bars | null;
+  // filed results and mutual fund holdings, for CAN SLIM's C, A and I
+  fundamentals?: Map<string, Fundamentals>;
 }
 
 export interface OverviewItem {
@@ -182,14 +196,14 @@ export class Engine {
   profiles(): Map<string, Profile> {
     if (this.profileMap) return this.profileMap;
     const { asOf } = this.ds;
-    const input = new Map<string, { bars: Bars; ranked: boolean }>();
+    const input = new Map<string, ProfileInput>();
     for (const [symbol, bars] of this.ds.bars) {
       const co = this.ds.companies.get(symbol);
       if (!co || !bars.c.length) continue;
       const fresh = !asOf || daysBetween(bars.t[bars.t.length - 1], asOf) <= DEFAULT_STALE_DAYS;
-      input.set(symbol, { bars, ranked: fresh && isEquity(co) });
+      input.set(symbol, { bars, ranked: fresh && isEquity(co), fund: this.ds.fundamentals?.get(symbol) });
     }
-    this.profileMap = buildProfiles(input);
+    this.profileMap = buildProfiles(input, asOf ?? '');
     return this.profileMap;
   }
 
@@ -215,7 +229,7 @@ export class Engine {
       if (profiles) {
         const p = profiles.get(symbol);
         if (u.trendTemplate && p?.tt !== 8) continue;
-        if (u.canslim && !(p?.canslim.n && p.canslim.s && p.canslim.l)) continue;
+        if (u.canslim && !(p && meetsCanSlim(p.canslim))) continue;
         if (u.minRs != null && !((p?.rs ?? 0) >= u.minRs)) continue;
         if (stages && !stages.has(p?.stage ?? null)) continue;
       }
@@ -271,7 +285,8 @@ export class Engine {
       stageWeeks: p?.stageWeeks ?? 0,
       tt: p?.tt ?? 0,
       ttChecks: p?.ttChecks ?? [],
-      canslim: p?.canslim ?? { n: false, s: false, l: false },
+      canslim: p?.canslim ?? { c: null, a: null, n: false, s: false, l: false, i: null },
+      canslimWhy: p?.canslimWhy ?? { c: '', a: '', i: '' },
       fromHigh: pctBelowHigh(bars.c[last], p),
     };
   }

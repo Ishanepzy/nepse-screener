@@ -6,7 +6,7 @@ Live: https://ishanepzy.github.io/nepse-screener/
 
 - scans on EMA/SMA crosses, RSI, MACD, Supertrend, Bollinger, ADX, Stochastic, volume and 52-week breakouts, or any mix of
   your own conditions
-- RS rating, Weinstein stage, Minervini trend template and the price side of O'Neil's CAN SLIM for every stock
+- RS rating, Weinstein stage, Minervini trend template and O'Neil's CAN SLIM for every stock
 - charts with indicators and drawing tools
 - relative rotation graph against the NEPSE index
 - watchlist, leaders and laggards by sector, position size calculator, trade journal
@@ -78,12 +78,28 @@ worked out when that panel is open or a scan uses it.
 The line turns gold with a dot on every bar where the ratio closes above its highest value of the previous 126
 days (6 months), so a run of dots is a stock that keeps outrunning the market. The lookback can be changed.
 
-**CAN SLIM.** William O'Neil's seven letters, as far as prices and volume go: N (within 15% of the 52-week high),
-S (more volume on up days than down days over the last 50 sessions), L (RS rating 80 or more) and M (NEPSE above
-its 50-day average, and the 50-day above the 200-day). C and A need quarterly earnings growth and I needs
-institutional holdings; merolagani only shows the latest EPS, not its history, so those three are shown as no data
-rather than guessed. The CAN SLIM list and filter use N, S and L; M is shown in the market panel, and O'Neil would
-hold off buying while it is not in an uptrend.
+**CAN SLIM.** William O'Neil's seven letters:
+- C: the latest quarter's net profit up 25% or more on the same quarter a year before.
+- A: net profit up in each of the last three fiscal years, 25% a year or more.
+- N: within 15% of the 52-week high.
+- S: more volume on up days than down days over the last 50 sessions.
+- L: RS rating 80 or more.
+- I: mutual funds hold 1% or more of the shares the public holds, and no less than two months before.
+- M: NEPSE above its 50-day average, and the 50-day above the 200-day.
+
+C and A use net profit rather than EPS: NEPSE companies issue bonus shares often and filed EPS isn't restated for
+them. Results come from nepsetrading.com, whose robots.txt allows these pages. The daily build reads its company
+list once, then a company's own page only after it files something new, and its five-year page once a year, all
+cached in `data/fundamentals.json` between runs. Filings are year to date, so a quarter on its own is that filing
+less the one before. For I, the same site's quarterly page names a few schemes holding the stock and the part of
+all mutual fund holdings each one has, which gives the total; it is read every two weeks (funds report monthly) and
+measured against the shares the public holds, since promoter shares rarely trade. Mutual funds are the only
+institutions whose holdings NEPSE publishes.
+
+The CAN SLIM list and filter need C, A, N, S, L and I; a letter without data counts as not met. M is shown in the
+market panel, and O'Neil would hold off buying while it is not in an uptrend. On the chart, the CAN SLIM indicator
+draws the 52-week high, the line 15% under it and the 50- and 200-day averages, with a panel of N, S, L and M on
+every day.
 
 **Relative rotation.** Each stock against the NEPSE index on weekly closes. RS-Ratio (across) is 100 plus the
 z-score of price / index over 10 weeks; RS-Momentum (up) is 100 plus the z-score of RS-Ratio's weekly change over

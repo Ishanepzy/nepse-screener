@@ -97,10 +97,10 @@ export function ScanBuilder({ scan, onChange, saved, onSave, onLoadSaved, onDele
         </label>
         <label
           className="check"
-          title="William O'Neil's CAN SLIM, the letters prices and volume can check: N (within 15% of the 52-week high), S (more volume on up days than down days over 50 sessions), L (RS rating 80+)"
+          title="William O'Neil's CAN SLIM: C (latest quarter's profit up 25%+ on a year before), A (profit up every year for 3 years, 25%+ a year), N (within 15% of the 52-week high), S (more volume on up days than down days over 50 sessions), L (RS rating 80+), I (mutual funds hold 1%+ of the public's shares, and not falling). A letter without data counts as not met. M is the market, shown above."
         >
           <input type="checkbox" checked={!!u.canslim} onChange={(e) => setUniverse({ canslim: e.target.checked || undefined })} />
-          Meets CAN SLIM <span className="muted">(N, S, L)</span>
+          Meets CAN SLIM
         </label>
         <label className="field" title="Relative strength rating: how the stock's last 12 months (the latest 3 counted double) rank against every other company share. 99 = stronger than 99% of them.">
           <span>RS rating</span>

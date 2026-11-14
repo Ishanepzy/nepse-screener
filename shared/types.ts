@@ -54,7 +54,7 @@ export interface Universe {
   minRs?: number;
   // empty = all
   stages?: Stage[];
-  // N, S and L of CAN SLIM all met
+  // the stock's CAN SLIM letters all met (see meetsCanSlim)
   canslim?: boolean;
 }
 
@@ -92,7 +92,8 @@ export interface ScreenRow {
   // trend template: rules met out of 8, and each result in TREND_TEMPLATE order
   tt: number;
   ttChecks: boolean[];
-  canslim: { n: boolean; s: boolean; l: boolean };
+  canslim: { c: boolean | null; a: boolean | null; n: boolean; s: boolean; l: boolean; i: boolean | null };
+  canslimWhy: { c: string; a: string; i: string };
   fromHigh: number | null;
 }
 

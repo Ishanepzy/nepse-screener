@@ -57,7 +57,7 @@ export const PRESETS: Preset[] = [
     id: 'canslim',
     name: 'CAN SLIM',
     description:
-      "William O'Neil's CAN SLIM, the parts prices and volume can check: N (within 15% of the 52-week high), S (more volume on up days than down days over 50 sessions) and L (RS rating 80+). C, A and I need earnings data this site doesn't have; M, the market's trend, shows above the table.",
+      "William O'Neil's CAN SLIM: latest quarter's profit up 25% or more on a year before (C), profit up every year for three years at 25% a year (A), within 15% of the 52-week high (N), more volume on up days (S), RS rating 80+ (L) and mutual funds holding 1%+ of the public's shares and not selling (I). M, the market's trend, shows above the table.",
     bias: 'list',
     match: 'all',
     conditions: [],

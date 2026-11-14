@@ -146,8 +146,8 @@ test('CAN SLIM: up/down volume, and N, S, L on a strong stock and a weak one', (
   up.v = up.c.map((_, i) => (i % 2 ? 2000 : 1000)); // rises on the busy days
   const down = weekdays(Array.from({ length: 300 }, (_, i) => 300 * 0.996 ** i));
   const p = buildProfiles(new Map([['UP', { bars: up, ranked: true }], ['DOWN', { bars: down, ranked: true }]]));
-  assert.deepEqual(p.get('UP')!.canslim, { n: true, s: true, l: true });
-  assert.deepEqual(p.get('DOWN')!.canslim, { n: false, s: false, l: false });
+  assert.deepEqual(p.get('UP')!.canslim, { c: null, a: null, n: true, s: true, l: true, i: null });
+  assert.deepEqual(p.get('DOWN')!.canslim, { c: null, a: null, n: false, s: false, l: false, i: null });
 });
 
 test('CAN SLIM series: N, S, L and M on every bar, the 50-session volume window rolling like a fresh count', () => {

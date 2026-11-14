@@ -140,7 +140,7 @@ export function ResultsTable({
         const i = Number(sort.key.slice(3));
         return conditions[i] && r.hits[i] ? hitSortValue(r.hits[i], conditions[i]) : Infinity;
       }
-      if (sort.key === 'canslim') return Number(r.canslim.n) + Number(r.canslim.s) + Number(r.canslim.l);
+      if (sort.key === 'canslim') return (['c', 'a', 'n', 's', 'l', 'i'] as const).filter((k) => r.canslim[k]).length;
       const v = r[sort.key as keyof ScreenRow];
       return typeof v === 'number' || typeof v === 'string' ? v : -Infinity;
     };
@@ -297,7 +297,7 @@ export function ResultsTable({
                 {header('rs', 'RS', 'hide-sm', 'Relative strength rating, 1–99: how the last 12 months rank against every other company share')}
                 {header('stage', 'Stage', 'hide-sm', STAGE_HELP)}
                 {header('tt', 'Trend', 'hide-sm', "Mark Minervini's trend template: how many of its 8 rules the stock meets")}
-                {header('canslim', 'CAN SLIM', 'hide-sm', "William O'Neil's CAN SLIM. Green letters are met; C, A and I need earnings data this site doesn't have")}
+                {header('canslim', 'CAN SLIM', 'hide-sm', "William O'Neil's CAN SLIM. Green letters are met, faint ones have no data. Hover a row's letters for the figures.")}
                 {header('sector', 'Sector', 'left hide-sm')}
                 {header('avgTurnover', 'Avg turnover', 'hide-sm', 'Average daily turnover, last 20 sessions (NPR)')}
               </tr>
@@ -352,7 +352,7 @@ export function ResultsTable({
                     <TrendTemplateBadge tt={r.tt} checks={r.ttChecks} />
                   </td>
                   <td className="hide-sm">
-                    <CanSlimLetters c={r.canslim} m={marketUp} />
+                    <CanSlimLetters c={r.canslim} m={marketUp} why={r.canslimWhy} />
                   </td>
                   <td className="left hide-sm muted">{r.sector}</td>
                   <td className="mono hide-sm">{fmt.npr(r.avgTurnover)}</td>
@@ -386,7 +386,7 @@ function downloadCsv(rows: ScreenRow[], conditions: Condition[], asOf: string | 
     'Stage',
     'Weeks in stage',
     'Trend template (of 8)',
-    'CAN SLIM met (N S L)',
+    'CAN SLIM met',
     '% below 52W high',
     ...conditions.map(conditionLabel),
   ];
@@ -404,7 +404,7 @@ function downloadCsv(rows: ScreenRow[], conditions: Condition[], asOf: string | 
     r.stage,
     r.stage ? r.stageWeeks : '',
     r.tt,
-    (['n', 's', 'l'] as const).filter((k) => r.canslim[k]).map((k) => k.toUpperCase()).join(' '),
+    (['c', 'a', 'n', 's', 'l', 'i'] as const).filter((k) => r.canslim[k]).map((k) => k.toUpperCase()).join(' '),
     r.fromHigh?.toFixed(1),
     ...r.hits.map((h, i) => (!h.pass ? '' : hasWhen(conditions[i].op) ? `${h.date} (${fmt.ago(h.barsAgo)})` : `${h.left ?? ''}`)),
   ]);

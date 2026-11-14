@@ -3,6 +3,7 @@
 // ~390 symbols gzip to about 2.4 MB.
 import type { Bars, Company } from './types.ts';
 import type { Dataset } from './engine.ts';
+import type { Fundamentals } from './fundamentals.ts';
 
 // 4 years. With 3, EMA(200) had not settled and a borderline cross came out different from full history.
 export const SNAPSHOT_YEARS = 4;
@@ -19,6 +20,8 @@ export interface SnapshotFile {
   companies: [string, string, string][];
   bars: Record<string, PackedBars>;
   index: PackedBars | null;
+  // filed results and mutual fund holdings, by symbol (missing in files built before they were added)
+  fund?: Record<string, Fundamentals>;
 }
 
 const paisa = (x: number) => Math.round(x * 100);
@@ -75,7 +78,8 @@ export function encodeSnapshot(ds: Dataset, years = SNAPSHOT_YEARS): SnapshotFil
     bars[symbol] = packed;
     companies.push([symbol, co.name, co.sector ?? '']);
   }
-  return { v: 1, asOf: ds.asOf, builtAt: ds.builtAt, dates, companies, bars, index: ds.index && pack(ds.index, from, pos) };
+  const fund = ds.fundamentals && Object.fromEntries([...ds.fundamentals].filter(([s]) => bars[s]));
+  return { v: 1, asOf: ds.asOf, builtAt: ds.builtAt, dates, companies, bars, index: ds.index && pack(ds.index, from, pos), ...(fund ? { fund } : {}) };
 }
 
 export function decodeSnapshot(f: SnapshotFile): Dataset {
@@ -84,5 +88,6 @@ export function decodeSnapshot(f: SnapshotFile): Dataset {
     f.companies.map(([symbol, name, sector]) => [symbol, { symbol, name, sector: sector || undefined, active: true }]),
   );
   const bars = new Map(Object.entries(f.bars).map(([s, p]) => [s, unpack(p, f.dates)]));
-  return { asOf: f.asOf, builtAt: f.builtAt, companies, bars, index: f.index && unpack(f.index, f.dates) };
+  const fundamentals = f.fund ? new Map(Object.entries(f.fund)) : undefined;
+  return { asOf: f.asOf, builtAt: f.builtAt, companies, bars, index: f.index && unpack(f.index, f.dates), fundamentals };
 }

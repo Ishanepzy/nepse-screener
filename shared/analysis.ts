@@ -1,6 +1,7 @@
 // Weinstein stage, RS rating and trend template for every stock, as of its last bar.
 import type { Bars } from './types.ts';
 import { ema, sma, stdev } from './indicators.ts';
+import { A_MIN_GROWTH, C_MIN_GROWTH, I_MIN_PCT, letterA, letterC, letterI, type Fundamentals } from './fundamentals.ts';
 
 export type Stage = 1 | 2 | 3 | 4;
 
@@ -25,19 +26,28 @@ export interface Profile {
   ret: { m1: number | null; m3: number | null; m6: number | null; y1: number | null };
   // volume on up days / volume on down days, last 50 sessions
   udVol: number | null;
-  // the CAN SLIM letters price and volume can answer (see CANSLIM)
-  canslim: { n: boolean; s: boolean; l: boolean };
+  // William O'Neil's CAN SLIM, the market's M aside (Engine.market). null: no data for that letter.
+  canslim: CanSlim;
+  // how C, A and I came out, in words, for tooltips
+  canslimWhy: { c: string; a: string; i: string };
 }
 
-// William O'Neil's CAN SLIM, as far as prices and volume go. C, A (earnings growth) and I (institutional buying)
-// need data this site doesn't have; M is the market itself, the same for every stock (Engine.market).
+export type CanSlim = { c: boolean | null; a: boolean | null; n: boolean; s: boolean; l: boolean; i: boolean | null };
+
+// William O'Neil's CAN SLIM. C, A and I come from filed results and mutual fund holdings (shared/fundamentals.ts);
+// M is the market itself, the same for every stock (Engine.market).
 export const CANSLIM = {
+  c: `C: the latest quarter's net profit up ${C_MIN_GROWTH}% or more on the same quarter a year before`,
+  a: `A: net profit up in each of the last three years, ${A_MIN_GROWTH}% a year or more`,
   n: 'N: within 15% of its 52-week high',
   s: 'S: more volume on up days than on down days over the last 50 sessions',
   l: 'L: RS rating 80 or more',
+  i: `I: mutual funds hold ${I_MIN_PCT}% or more of the public's shares, and no less than two months before`,
   m: 'M: NEPSE in an uptrend (above its 50-day average, and the 50-day above the 200-day)',
-  missing: 'C, A and I need quarterly earnings and institutional holdings, which this site has no data for',
 };
+
+// the stock's own letters all met (M is the market's); a letter without data isn't met
+export const meetsCanSlim = (c: CanSlim) => !!(c.c && c.a && c.n && c.s && c.l && c.i);
 
 // CAN SLIM's S looks at this many sessions
 const UD_BARS = 50;
@@ -442,9 +452,12 @@ export interface ProfileInput {
   bars: Bars;
   // only company shares that still trade are ranked; the rest get no RS rating
   ranked: boolean;
+  // filed results and holdings, for CAN SLIM's C, A and I
+  fund?: Fundamentals;
 }
 
-export function buildProfiles(stocks: Map<string, ProfileInput>): Map<string, Profile> {
+// today: the data's date, for how old a holdings reading is
+export function buildProfiles(stocks: Map<string, ProfileInput>, today = ''): Map<string, Profile> {
   const scores = new Map<string, number>();
   for (const [symbol, { bars, ranked }] of stocks) {
     if (!ranked) continue;
@@ -454,9 +467,12 @@ export function buildProfiles(stocks: Map<string, ProfileInput>): Map<string, Pr
   const ratings = rsRatings(scores);
 
   const out = new Map<string, Profile>();
-  for (const [symbol, { bars }] of stocks) {
+  for (const [symbol, { bars, fund }] of stocks) {
     const n = bars.c.length;
     if (!n) continue;
+    const letC = letterC(fund);
+    const letA = letterA(fund);
+    const letI = letterI(fund, today || bars.t[n - 1]);
     const from = Math.max(0, n - YEAR_BARS);
     let high52 = -Infinity;
     let low52 = Infinity;
@@ -482,10 +498,14 @@ export function buildProfiles(stocks: Map<string, ProfileInput>): Map<string, Pr
       ttChecks,
       udVol: ud.down > 0 ? ud.up / ud.down : null,
       canslim: {
+        c: letC.ok,
+        a: letA.ok,
         n: hi != null && bars.c[n - 1] >= hi * 0.85,
         s: ud.up > ud.down,
         l: rs != null && rs >= 80,
+        i: letI.ok,
       },
+      canslimWhy: { c: letC.why, a: letA.why, i: letI.why },
       high52: hi,
       low52: lo,
       ret: { m1: returnOver(bars, 30), m3: returnOver(bars, 91), m6: returnOver(bars, 182), y1: returnOver(bars, 365) },
