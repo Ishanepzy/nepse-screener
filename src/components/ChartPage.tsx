@@ -41,6 +41,9 @@ import { CanSlimLetters, RsBadge, StageBadge, TrendTemplateBadge } from './Badge
 import { StarButton } from './StarButton.tsx';
 import { TREND_TEMPLATE, TREND_TEMPLATE_SHORT } from '../../shared/analysis.ts';
 import { load, save } from '../storage.ts';
+import type { BacktestStats, BacktestTrade, ExitReason } from '../../shared/backtest.ts';
+import { loadSetup } from '../backtestSetup.ts';
+import { loadRates } from '../costsStore.ts';
 
 // colour-blind-safe order, checked on both backgrounds
 const PALETTE = {
@@ -83,6 +86,8 @@ interface Props {
   onNavigate: (symbol: string) => void;
   onClose: () => void;
   onSizePosition: (symbol: string) => void;
+  // opened from the backtest: that test's trades (every stock's; the chart shows this one's)
+  backtestTrades?: BacktestTrade[] | null;
 }
 
 interface Parts {
@@ -98,14 +103,38 @@ function applyRange(chart: IChartApi, n: number, r: Range) {
   else chart.timeScale().setVisibleLogicalRange({ from: n - bars, to: n + 3 });
 }
 
-export function ChartPage({ symbol, conditions, trendTemplate = false, canslim = false, marketUp = null, theme, list, version, onNavigate, onClose, onSizePosition }: Props) {
+export function ChartPage({
+  symbol,
+  conditions,
+  trendTemplate = false,
+  canslim = false,
+  marketUp = null,
+  theme,
+  list,
+  version,
+  onNavigate,
+  onClose,
+  onSizePosition,
+  backtestTrades = null,
+}: Props) {
   const [data, setData] = useState<ChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<Range>('1Y');
   const [hover, setHover] = useState<number | null>(null);
   const [parts, setParts] = useState<Parts | null>(null);
   const [showVolume, setShowVolumeState] = useState(() => load(VOLUME_KEY) !== 0);
-  const [showSignals, setShowSignals] = useState(true);
+  // from the backtest its trades say more than the raw signals, so the signals start hidden
+  const [showSignals, setShowSignals] = useState(() => !backtestTrades);
+  // trades on the chart: the backtest's that opened it, or a test of this one stock with the saved rules
+  const [btOn, setBtOn] = useState(() => !!backtestTrades);
+  const [btRun, setBtRun] = useState<{ symbol: string; trades: BacktestTrade[]; stats: BacktestStats } | null>(null);
+  const [btBusy, setBtBusy] = useState(false);
+  const [btError, setBtError] = useState<string | null>(null);
+  const tradeSeries = useRef<ISeriesApi<'Line'>[]>([]);
+  useEffect(() => {
+    setBtOn(!!backtestTrades);
+    setShowSignals(!backtestTrades);
+  }, [backtestTrades]);
   const [toolId, setTool] = useState<ToolId | null>(null);
   const tool = toolById(toolId);
   const [selected, setSelected] = useState<string | null>(null);
@@ -192,6 +221,29 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, canslim =
     setEditing(null);
   }, [shownSymbol]);
   const selectedDrawing = drawings.find((d) => d.id === selected) ?? null;
+
+  // the toolbar's test: this stock alone with the saved backtest rules, the whole account in each trade
+  useEffect(() => {
+    if (!btOn || backtestTrades || !shownSymbol || btRun?.symbol === shownSymbol) return;
+    const setup = loadSetup();
+    if (!setup.entry.conditions.length) return setBtError('Set a buy rule on the Backtest page first.');
+    let off = false;
+    setBtBusy(true);
+    setBtError(null);
+    api
+      .backtest({ ...setup, symbols: [shownSymbol], positionPct: 100, maxPositions: 1, minTurnover: 0, rates: setup.fees ? loadRates() : undefined })
+      .then((r) => !off && setBtRun({ symbol: shownSymbol, trades: r.trades, stats: r.stats }))
+      .catch((e) => !off && setBtError(e.message))
+      .finally(() => !off && setBtBusy(false));
+    return () => {
+      off = true;
+    };
+  }, [btOn, backtestTrades, shownSymbol]);
+  const btTrades = useMemo(() => {
+    if (!btOn || !shownSymbol) return [];
+    if (backtestTrades) return backtestTrades.filter((t) => t.symbol === shownSymbol);
+    return btRun?.symbol === shownSymbol ? btRun.trades : [];
+  }, [btOn, shownSymbol, backtestTrades, btRun]);
   const deleteSelected = () => {
     if (!selectedDrawing) return;
     commitDrawings(drawings.filter((d) => d.id !== selectedDrawing.id));
@@ -309,6 +361,7 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, canslim =
     return () => {
       liveParts.current = null;
       indicatorSeries.current = [];
+      tradeSeries.current = [];
       setParts(null);
       chart.remove();
     };
@@ -354,17 +407,55 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, canslim =
   useEffect(() => {
     if (!isLive(parts) || !data) return;
     const css = getComputedStyle(document.documentElement);
+    const v = (name: string) => css.getPropertyValue(name).trim();
     const list: SeriesMarker<Time>[] = showSignals
       ? data.markers.map((m) => ({
           time: m.date,
           position: m.dir === 'up' ? 'belowBar' : 'aboveBar',
-          color: css.getPropertyValue(m.dir === 'up' ? '--up' : '--down').trim(),
+          color: v(m.dir === 'up' ? '--up' : '--down'),
           shape: m.dir === 'up' ? 'arrowUp' : 'arrowDown',
           text: m.text,
         }))
       : [];
+    for (const t of btTrades) {
+      list.push({ time: t.entryDate, position: 'belowBar', color: v('--accent'), shape: 'arrowUp', text: 'Buy' });
+      list.push({
+        time: t.exitDate,
+        position: 'aboveBar',
+        color: v(t.pnl > 0 ? '--up' : '--down'),
+        shape: 'arrowDown',
+        text: `${EXIT_SHORT[t.reason]} ${t.ret > 0 ? '+' : ''}${t.ret.toFixed(1)}%`,
+      });
+    }
+    list.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
     parts.markers.setMarkers(list);
-  }, [parts, data, showSignals]);
+  }, [parts, data, showSignals, btTrades]);
+
+  // each trade as a dashed line from the buy to the sale: green for a profit, red for a loss
+  useEffect(() => {
+    if (!isLive(parts)) return;
+    const { chart } = parts;
+    for (const s of tradeSeries.current) chart.removeSeries(s);
+    tradeSeries.current = [];
+    const css = getComputedStyle(document.documentElement);
+    for (const t of btTrades) {
+      const s = chart.addSeries(LineSeries, {
+        color: css.getPropertyValue(t.pnl > 0 ? '--up' : '--down').trim(),
+        lineWidth: 2,
+        lineStyle: LineStyle.Dashed,
+        pointMarkersVisible: true,
+        pointMarkersRadius: 3,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      s.setData([
+        { time: t.entryDate, value: t.entryPrice },
+        { time: t.exitDate, value: t.exitPrice },
+      ]);
+      tradeSeries.current.push(s);
+    }
+  }, [parts, btTrades]);
   useEffect(() => {
     if (!isLive(parts) || !data) return;
     const { chart } = parts;
@@ -575,14 +666,27 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, canslim =
           </label>
         )}
         <div className="spacer" />
+        <button
+          className={`btn ${btOn ? 'on' : ''}`}
+          aria-pressed={btOn}
+          onClick={() => setBtOn(!btOn)}
+          title={
+            backtestTrades
+              ? 'Show or hide the trades from your backtest'
+              : 'Test your backtest rules on this stock and draw the trades. The rules are the ones on the Backtest page.'
+          }
+        >
+          Backtest
+        </button>
         <button className="btn" onClick={() => onSizePosition(symbol)} title="How many shares to buy for the risk you choose">
           Position size
         </button>
-        <a className="btn ghost hide-sm" href={`https://merolagani.com/CompanyDetail.aspx?symbol=${encodeURIComponent(symbol)}`} target="_blank" rel="noreferrer">
+        <a className="btn ghost hide-sm hide-md" href={`https://merolagani.com/CompanyDetail.aspx?symbol=${encodeURIComponent(symbol)}`} target="_blank" rel="noreferrer">
           merolagani ↗
         </a>
-        <button className="btn" onClick={toggleFullscreen} title={fullscreen !== 'off' ? 'Exit full screen (Esc)' : 'Full screen'}>
-          {fullscreen !== 'off' ? '⤡ Exit full screen' : '⤢ Full screen'}
+        <button className="btn" onClick={toggleFullscreen} aria-label={fullscreen !== 'off' ? 'Exit full screen' : 'Full screen'} title={fullscreen !== 'off' ? 'Exit full screen (Esc)' : 'Full screen'}>
+          {fullscreen !== 'off' ? '⤡' : '⤢'}
+          <span className="hide-md"> {fullscreen !== 'off' ? 'Exit full screen' : 'Full screen'}</span>
         </button>
       </div>
 
@@ -665,6 +769,7 @@ export function ChartPage({ symbol, conditions, trendTemplate = false, canslim =
                 <span className={tone(chg)}>{fmt.pct(chg)}</span>
                 {showVolume && <span>Vol {fmt.int(b.v[i])}</span>}
               </div>
+              {btOn && <BacktestLegend trades={btTrades} busy={btBusy} error={btError} fromTest={!!backtestTrades} onClose={() => setBtOn(false)} />}
               {indicators.map((ind) => {
                 const lines = computed.get(ind.uid);
                 const def = getDef(ind.id);
@@ -762,6 +867,42 @@ function CanSlimLinesLegend({ lines, i, colors }: { lines: Record<string, number
         MA 200 <b>{val('ma200')}</b>
       </span>
     </>
+  );
+}
+
+const EXIT_SHORT: Record<ExitReason, string> = { stop: 'Stop', trail: 'Trail', target: 'Target', signal: 'Sell', time: 'Time', end: 'Open' };
+
+function BacktestLegend({ trades, busy, error, fromTest, onClose }: { trades: BacktestTrade[]; busy: boolean; error: string | null; fromTest: boolean; onClose: () => void }) {
+  const wins = trades.filter((t) => t.pnl > 0).length;
+  // one trade after another, each with what the last one left
+  const total = (trades.reduce((m, t) => m * (1 + t.ret / 100), 1) - 1) * 100;
+  const source = fromTest ? 'from your backtest' : 'your saved rules';
+  return (
+    <div className="lg-row lg-ind lg-bt" title={`Trades ${source}. Blue arrows are buys; the arrow above a bar is the sale, with why it sold and the return after fees.`}>
+      <span>Backtest</span>
+      {busy ? (
+        <span className="muted">testing…</span>
+      ) : error ? (
+        <span className="down">{error}</span>
+      ) : trades.length ? (
+        <>
+          <b>
+            {trades.length} {trades.length === 1 ? 'trade' : 'trades'}
+          </b>
+          <span>{Math.round((wins / trades.length) * 100)}% won</span>
+          <b className={total > 0 ? 'up' : total < 0 ? 'down' : ''}>
+            {total > 0 ? '+' : ''}
+            {total.toFixed(1)}% in all
+          </b>
+          <span className="muted">{source}</span>
+        </>
+      ) : (
+        <span className="muted">no trades {fromTest ? 'for this stock in that test' : 'with your saved rules'}</span>
+      )}
+      <button className="lg-remove" aria-label="Hide the backtest" title="Hide" onClick={onClose}>
+        ×
+      </button>
+    </div>
   );
 }
 

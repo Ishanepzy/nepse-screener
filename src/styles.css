@@ -1753,6 +1753,10 @@ td.price {
   .brand h1 {
     display: none;
   }
+  /* labels that give way on a mid-size window (the icon or a shorter word stays) */
+  .hide-md {
+    display: none;
+  }
 }
 .tabs a {
   padding: 7px 13px;
@@ -2677,4 +2681,10 @@ td.old-chg {
 }
 .account-pop form .link {
   align-self: flex-start;
+}
+
+.btn.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }

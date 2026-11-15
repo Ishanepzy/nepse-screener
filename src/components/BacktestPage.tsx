@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Condition, Operand } from '../../shared/types.ts';
-import type { BacktestResult, BacktestSettings, BacktestTrade, ExitReason } from '../../shared/backtest.ts';
-import { PRESETS } from '../../shared/presets.ts';
+import type { BacktestResult, BacktestTrade, ExitReason } from '../../shared/backtest.ts';
 import { api } from '../api.ts';
-import { load, save } from '../storage.ts';
+import { save } from '../storage.ts';
+import { REASONS, RULES, SETUP_KEY, loadSetup, type Scope, type Setup } from '../backtestSetup.ts';
 import { loadRates } from '../costsStore.ts';
 import { useWatchlist } from '../watchlist.ts';
 import * as fmt from '../format.ts';
@@ -13,62 +13,8 @@ import { NumberField } from './NumberField.tsx';
 import { StockInput } from './StockInput.tsx';
 import { EquityChart } from './EquityChart.tsx';
 
-type Scope = 'all' | 'scan' | 'watchlist' | 'one';
-interface Setup extends BacktestSettings {
-  scope: Scope;
-  symbol: string;
-}
-
-const KEY = 'nepse.backtest.v1';
 const o = (id: string, params: number[] = [], line?: string): Operand => ({ id, params, line });
 
-// the rules a backtest can start from: the quick scans that buy, and two the screener only has as filters
-const RULES: { id: string; name: string; conditions: Condition[]; match: 'all' | 'any' }[] = [
-  ...PRESETS.filter((p) => p.conditions.length && p.bias !== 'bear').map((p) => ({ id: p.id, name: p.name, conditions: p.conditions, match: p.match })),
-  { id: 'bt-tt', name: 'Trend template: all 8 rules met', match: 'all', conditions: [{ left: o('tt', [], 'pass'), op: 'fired', right: o('value', [0]), within: 1, holds: true }] },
-  {
-    id: 'bt-csp',
-    name: 'CAN SLIM, the price letters: N, S and L',
-    match: 'all',
-    conditions: (['n', 's', 'l'] as const).map((k): Condition => ({ left: o('cs', [], k), op: 'above', right: o('value', [0.5]), within: 1, holds: true })),
-  },
-  // results data reaches back about two years and holdings only a month, so this one has little history to test
-  { id: 'bt-cs', name: 'CAN SLIM: 6 or more of the 7 letters (short history)', match: 'all', conditions: [{ left: o('cs', [], 'score'), op: 'above', right: o('value', [5.5]), within: 1, holds: true }] },
-];
-
-const DEFAULTS: Setup = {
-  entry: { conditions: RULES.find((r) => r.id === 'ema20-50-up')?.conditions ?? RULES[0].conditions, match: 'all' },
-  exitConditions: [],
-  // O'Neil's rule: cut a loss at 7 to 8%
-  stopPct: 8,
-  targetPct: 25,
-  trailPct: null,
-  maxDays: null,
-  from: null,
-  to: null,
-  capital: 1_000_000,
-  positionPct: 10,
-  maxPositions: 10,
-  minHold: 2,
-  fees: true,
-  minTurnover: 1_000_000,
-  scope: 'all',
-  symbol: '',
-};
-
-const REASONS: Record<ExitReason, string> = {
-  stop: 'Stop loss',
-  trail: 'Trailing stop',
-  target: 'Target',
-  signal: 'Sell rule',
-  time: 'Time limit',
-  end: 'Still open at the end',
-};
-
-function loadSetup(): Setup {
-  const v = load(KEY);
-  return v && typeof v === 'object' ? { ...DEFAULTS, ...(v as Partial<Setup>) } : DEFAULTS;
-}
 
 interface Props {
   version: number;
@@ -77,7 +23,7 @@ interface Props {
   scanConditions: Condition[];
   scanMatch: 'all' | 'any';
   scanSymbols: string[];
-  onOpenChart: (symbol: string, list: string[], conditions: Condition[]) => void;
+  onOpenChart: (symbol: string, list: string[], conditions: Condition[], trades: BacktestTrade[]) => void;
 }
 
 export function BacktestPage({ version, theme, scanConditions, scanMatch, scanSymbols, onOpenChart }: Props) {
@@ -86,7 +32,7 @@ export function BacktestPage({ version, theme, scanConditions, scanMatch, scanSy
   const setSetup = (patch: Partial<Setup>) => {
     const next = { ...setup, ...patch };
     setSetupState(next);
-    save(KEY, next);
+    save(SETUP_KEY, next);
   };
   const [range, setRange] = useState<{ from: string; to: string } | null>(null);
   const [result, setResult] = useState<BacktestResult | null>(null);
@@ -291,7 +237,7 @@ export function BacktestPage({ version, theme, scanConditions, scanMatch, scanSy
         </div>
       </section>
 
-      {result && <Results r={result} theme={theme} onOpen={(s) => onOpenChart(s, [...new Set(result.trades.map((t) => t.symbol))], setup.entry.conditions)} />}
+      {result && <Results r={result} theme={theme} onOpen={(s) => onOpenChart(s, [...new Set(result.trades.map((t) => t.symbol))], setup.entry.conditions, result.trades)} />}
     </div>
   );
 }
@@ -412,7 +358,7 @@ function Results({ r, theme, onOpen }: { r: BacktestResult; theme: 'light' | 'da
               </thead>
               <tbody>
                 {trades.map((t, k) => (
-                  <tr key={k} onClick={() => onOpen(t.symbol)} title="Open the chart, with the buy signals marked">
+                  <tr key={k} onClick={() => onOpen(t.symbol)} title="Open the chart with this test's trades on it">
                     <td className="left sym">{t.symbol}</td>
                     <td className="left mono">{t.entryDate}</td>
                     <td className="mono hide-sm">{fmt.price(t.entryPrice)}</td>
