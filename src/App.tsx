@@ -33,6 +33,8 @@ import { JournalPage } from './components/JournalPage.tsx';
 import { AccountMenu } from './components/AccountMenu.tsx';
 import { WatchlistPage } from './components/WatchlistPage.tsx';
 import { RotationPage } from './components/RotationPage.tsx';
+import { UsersPage } from './components/UsersPage.tsx';
+import { useCloud } from './cloud.ts';
 import * as fmt from './format.ts';
 
 type Theme = 'light' | 'dark';
@@ -42,7 +44,7 @@ const THEME_KEY = 'nepse.theme';
 // without a push.
 const STALE_AFTER_MS = 4 * 86_400_000;
 
-function initialTheme(): Theme {
+export function initialTheme(): Theme {
   const t = load(THEME_KEY);
   if (t === 'light' || t === 'dark') return t;
   return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -75,6 +77,7 @@ export function App() {
   const [session, setSession] = useState<Session>(() => sessionState(null));
   // bumped when live prices change the data, so everything built on it is fetched again
   const [version, setVersion] = useState(0);
+  const admin = useCloud().admin;
 
   const setScan = (s: Scan) => setScanState({ scan: s, preset: null });
 
@@ -278,7 +281,7 @@ export function App() {
               {info?.asOf ? (waiting ? `${info.asOf} close · no trades yet today` : `Prices as of ${info.asOf}`) : 'Loading data…'}
             </span>
           )}
-          <AccountMenu />
+          <AccountMenu onUsers={() => goTo('users')} />
           <button
             className="icon-btn"
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
@@ -346,6 +349,14 @@ export function App() {
           />
         )}
         {page.page === 'journal' && <JournalPage version={version} onOpenChart={openChart} />}
+        {page.page === 'users' &&
+          (admin ? (
+            <UsersPage />
+          ) : (
+            <div className="card page-intro" role="status">
+              This page is for the site’s admins.
+            </div>
+          ))}
         {page.page === 'calculator' && (
           <CalculatorPage
             symbol={page.symbol}

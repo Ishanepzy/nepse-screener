@@ -2765,6 +2765,123 @@ td.old-chg {
 .account-pop form .link {
   align-self: flex-start;
 }
+/* an admin with accounts waiting for approval */
+.avatar.waiting::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+}
+.account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.account-form p {
+  margin: 0;
+}
+
+/* the sign-in screen, in place of the whole site until the account is approved */
+.gate {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--bg);
+}
+.gate-card {
+  width: min(380px, 100%);
+  padding: 22px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.gate-card > p {
+  margin: 0;
+}
+.gate-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.gate-brand h1 {
+  font-size: var(--fs-lg);
+  margin: 0;
+}
+.gate-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  margin: 0;
+}
+.gate-checking {
+  margin: 8px 0;
+}
+
+/* admins: the users page */
+.users {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.users-list {
+  padding: 0;
+  overflow: hidden;
+}
+.users-filter {
+  margin: 14px 16px 6px;
+}
+.users-note {
+  margin: 10px 16px 16px;
+}
+.users-email {
+  white-space: normal;
+}
+.users-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.users-who > span:first-child {
+  word-break: break-all;
+}
+.users-actions {
+  white-space: nowrap;
+}
+.users-actions .btn + .btn {
+  margin-left: 6px;
+}
+/* phones: each account as a block, the email on top and its status and buttons under it */
+@media (max-width: 720px) {
+  .users-list thead {
+    display: none;
+  }
+  .users-list tbody tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 12px 16px;
+  }
+  .users-list tbody td {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+  .users-list td.users-email {
+    flex: 1 0 100%;
+  }
+  .users-list td.users-actions {
+    margin-left: auto;
+  }
+}
 
 .btn.on {
   background: var(--accent-soft);

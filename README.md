@@ -113,15 +113,19 @@ cost, also drawn on the chart), the orders, and the results: net profit, win rat
 loss, the worst drawdown and how long trades were held. Each stock's session is saved, so you can leave and pick it
 up later, on any device when signed in.
 
-**Accounts (optional).** Signed out, everything you save (watchlist, journal, saved scans, drawings, chart and
-backtest sessions) stays in your browser. With Supabase set up, you can sign in with an email and password (or Google)
-and it lives in your account instead, the same on every device. The browser keeps a copy so pages open instantly;
-changes go to the account a moment after you make them. The first sign-in on a browser joins what was saved there
-with the account rather than replacing it. Signing out clears the account's data from that browser. To set it up:
-run `supabase/setup.sql` in your Supabase project, turn off "Confirm email" (Authentication, Sign In / Providers,
-Email) so a new account needs no email, then put the project URL and publishable key in `.env.local`
-(see `.env.example`) for local runs and in the repository's Actions variables `SUPABASE_URL` and `SUPABASE_KEY` for
-the live site.
+**Accounts and approval.** With Supabase set up, the site is for approved accounts only. Anyone can make an account
+(email and password, or Google), but it waits on a sign-in screen until an admin approves it on the Users page
+(account menu, Users). An admin can also block an account; its saved data is kept in case it's let back in.
+Everything a user saves (watchlist, journal, saved scans, drawings, chart and backtest sessions) lives in their
+account, the same on every device. The browser keeps a copy so pages open instantly; changes go to the account a
+moment after they're made. Signing out clears the account's data from that browser. Built without Supabase settings,
+the site is open to everyone and keeps everything in the browser.
+
+To set it up: run `supabase/setup.sql` in your Supabase project (SQL Editor), then make your own account the admin
+with the `update` line in that file's comments. Put the project URL and publishable key in `.env.local` (see
+`.env.example`) for local runs and in the repository's Actions variables `SUPABASE_URL` and `SUPABASE_KEY` for the
+live site. The approval check guards the pages and each account's data; the daily prices file itself is still a
+public file on GitHub Pages.
 
 **Relative rotation.** Each stock against the NEPSE index on weekly closes. RS-Ratio (across) is 100 plus the
 z-score of price / index over 10 weeks; RS-Momentum (up) is 100 plus the z-score of RS-Ratio's weekly change over

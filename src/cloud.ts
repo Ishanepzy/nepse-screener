@@ -18,16 +18,33 @@ export const googleEnabled = import.meta.env.VITE_SUPABASE_GOOGLE === 'true';
 const TABLE = 'user_data';
 const SEND_AFTER_MS = 1200;
 
+// A new account waits until an admin approves it (supabase/setup.sql, public.members)
+export type Access = 'pending' | 'approved' | 'blocked';
+
 export interface CloudState {
   status: 'off' | 'starting' | 'signed-out' | 'signed-in';
   email: string | null;
+  // signed in: whether the account may use the site; null until known, 'failed' when the check couldn't be made
+  access: Access | 'failed' | null;
+  admin: boolean;
+  // admins: accounts waiting for approval, once the list has been read
+  waiting: number | null;
   saving: boolean;
   error: string | null;
   // back from a "forgot password" email: signed in, and asked to choose a new password
   recovery: boolean;
 }
 
-let state: CloudState = { status: cloudConfigured ? 'starting' : 'off', email: null, saving: false, error: null, recovery: false };
+let state: CloudState = {
+  status: cloudConfigured ? 'starting' : 'off',
+  email: null,
+  access: null,
+  admin: false,
+  waiting: null,
+  saving: false,
+  error: null,
+  recovery: false,
+};
 const listeners = new Set<() => void>();
 const set = (patch: Partial<CloudState>) => {
   state = { ...state, ...patch };
@@ -74,11 +91,6 @@ const store: LocalStore = {
 
 let client: SupabaseClient | null = null;
 let session: Session | null = null;
-let rendered = false;
-// main.tsx: the app has drawn
-export const cloudRendered = () => {
-  rendered = true;
-};
 
 function backend(): Backend {
   const db = client!;
@@ -106,11 +118,39 @@ function backend(): Backend {
 
 const message = (e: unknown) => (e instanceof Error ? e.message : typeof e === 'object' && e && 'message' in e ? String((e as { message: unknown }).message) : String(e));
 
+// an error whose message is already written for the person using the site
+export class Plain extends Error {}
+
+// What went wrong, in words anyone can follow. The technical detail goes to the browser console for whoever runs the
+// site; database errors raised by supabase/setup.sql's own checks are already plain sentences and pass through.
+export function plain(e: unknown): string {
+  if (e instanceof Plain) return e.message;
+  const m = message(e);
+  const code = typeof e === 'object' && e && 'code' in e ? String((e as { code: unknown }).code) : '';
+  console.warn('[account]', code, m);
+  if (code === '42501' || code === 'P0002' || code === '22023') return m;
+  if (/failed to fetch|networkerror|load failed|network request failed|fetch failed/i.test(m)) return 'Couldn’t connect. Check your internet connection and try again.';
+  if (code === 'PGRST202' || code === '42883' || code === '42P01' || /could not find the function|schema cache|does not exist/i.test(m))
+    return 'Accounts on this site aren’t fully set up yet. Please try again later.';
+  if (/jwt|token|session/i.test(m)) return 'Your sign-in has run out. Sign out, then sign in again.';
+  if (/rate limit|too many/i.test(m)) return 'Too many tries for now. Wait a few minutes and try again.';
+  return 'Something went wrong on our side. Please try again in a moment.';
+}
+
 // sign-in links and Google come back here, to the page they were asked from
 const here = () => `${location.origin}${location.pathname}`;
 
-// Run once before the app first draws: picks up a sign-in that just came back, and brings the account's data down so
-// every page starts from it.
+async function fetchAccess(): Promise<{ status: Access; admin: boolean }> {
+  const { data, error } = await client!.rpc('my_access');
+  if (error) throw error;
+  const d = (data ?? {}) as { status?: unknown; admin?: unknown };
+  const status = d.status === 'approved' || d.status === 'blocked' ? d.status : 'pending';
+  return { status, admin: status === 'approved' && d.admin === true };
+}
+
+// Run once as the page opens: picks up a sign-in that just came back, checks the account may use the site, and
+// brings its data down. The app only draws after that (main.tsx shows the sign-in screen until then), so every page
+// starts from the account's data.
 export async function startCloud(): Promise<void> {
   if (!cloudConfigured) return;
   try {
@@ -127,20 +167,80 @@ export async function startCloud(): Promise<void> {
     if (linkError) set({ error: /expired|invalid/i.test(linkError) ? 'That email link has expired or was already used. Ask for a new one.' : linkError });
     client.auth.onAuthStateChange((_event, s) => {
       session = s;
-      if (!s && state.status === 'signed-in') set({ status: 'signed-out', email: null });
+      if (!s && state.status === 'signed-in') set({ status: 'signed-out', email: null, access: null, admin: false, waiting: null });
     });
     if (!session) return set({ status: 'signed-out' });
     if (linkError) set({ error: null });
     set({ status: 'signed-in', email: session.user.email ?? null, recovery: resetting });
-    const { send, changed } = await pullAccount(backend(), store, session.user.id);
-    // the page drew from this browser's copy while the account's was on its way: start again from the account's
-    if (rendered && changed) return location.reload();
-    // only now, so nothing saved from the old copy can overwrite the account's
-    setSaveHook(queue);
-    if (send.length) void flush();
+    const access = await fetchAccess();
+    if (access.status !== 'approved') return set({ access: access.status });
+    try {
+      await pullAccount(backend(), store, session.user.id).then(({ send }) => {
+        // only now, so nothing saved from the old copy can overwrite the account's
+        setSaveHook(queue);
+        if (send.length) void flush();
+      });
+    } catch (e) {
+      // the site still opens, on this browser's copy
+      set({ error: `Your saved items couldn’t be loaded from your account, so you’re seeing the copy kept in this browser. ${plain(e)}` });
+    }
+    set({ access: 'approved', admin: access.admin });
+    if (access.admin) void listMembers().catch(() => {});
   } catch (e) {
-    set({ status: session ? 'signed-in' : 'signed-out', error: `Couldn't reach your account: ${message(e)}` });
+    set(
+      session
+        ? { status: 'signed-in', access: 'failed', error: plain(e) }
+        : { status: 'signed-out', error: `Sign-in isn’t working right now. ${plain(e)}` },
+    );
   }
+}
+
+// A waiting account asks again. Let in: the page starts over, bringing the account's data down first.
+export async function recheckAccess(): Promise<Access | null> {
+  if (!client || !session) return null;
+  const access = await fetchAccess();
+  if (access.status === 'approved') location.reload();
+  else set({ access: access.status, error: null });
+  return access.status;
+}
+
+// ---------- admins: who may use the site ----------
+
+export interface Member {
+  id: string;
+  email: string;
+  status: Access;
+  admin: boolean;
+  signedUp: string;
+  // when the address was confirmed from the email; null = not yet, and the account can't sign in
+  confirmed: string | null;
+  lastSignIn: string | null;
+  decidedAt: string | null;
+}
+
+// everyone with an account, newest first (the database refuses anyone but an admin)
+export async function listMembers(): Promise<Member[]> {
+  const { data, error } = await ready().rpc('list_members');
+  if (error) throw error;
+  const rows = ((data ?? []) as Record<string, unknown>[]).map(
+    (r): Member => ({
+      id: String(r.user_id),
+      email: String(r.email ?? ''),
+      status: r.status === 'approved' || r.status === 'blocked' ? r.status : 'pending',
+      admin: r.is_admin === true,
+      signedUp: String(r.signed_up),
+      confirmed: (r.confirmed as string | null) ?? null,
+      lastSignIn: (r.last_sign_in as string | null) ?? null,
+      decidedAt: (r.decided_at as string | null) ?? null,
+    }),
+  );
+  set({ waiting: rows.filter((m) => m.status === 'pending').length });
+  return rows;
+}
+
+export async function setMemberStatus(id: string, status: Access): Promise<void> {
+  const { error } = await ready().rpc('set_member_status', { target: id, new_status: status });
+  if (error) throw error;
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -166,7 +266,12 @@ export async function flush(): Promise<void> {
   set({ saving: true });
   sending = pushKeys(backend(), store, keys)
     .then(() => set({ saving: false, error: null }))
-    .catch((e) => set({ saving: false, error: `Not saved to your account yet: ${message(e)}` }));
+    .catch((e) =>
+      set({
+        saving: false,
+        error: `Some changes haven’t reached your account yet. They’ll be sent the next time you change something or reload the page. ${plain(e)}`,
+      }),
+    );
   await sending;
   sending = null;
 }
@@ -179,7 +284,7 @@ if (typeof document !== 'undefined') {
 }
 
 const ready = () => {
-  if (!client) throw new Error('Accounts are not set up on this site');
+  if (!client) throw new Plain('Accounts aren’t available on this site.');
   return client;
 };
 
@@ -216,10 +321,10 @@ export async function setPassword(password: string): Promise<void> {
 export async function changePassword(current: string, next: string, onStep: (step: 'checking' | 'saving') => void = () => {}): Promise<void> {
   const db = ready();
   const email = session?.user.email;
-  if (!email) throw new Error('You’re not signed in.');
+  if (!email) throw new Plain('You’re not signed in.');
   onStep('checking');
   const check = await db.auth.signInWithPassword({ email, password: current });
-  if (check.error) throw new Error(/invalid login credentials/i.test(check.error.message) ? 'Your current password isn’t right.' : check.error.message);
+  if (check.error) throw /invalid login credentials/i.test(check.error.message) ? new Plain('Your current password isn’t right.') : check.error;
   onStep('saving');
   const { error } = await db.auth.updateUser({ password: next });
   if (error) throw error;
@@ -237,7 +342,7 @@ export const sendOwnPasswordReset = () => sendPasswordReset(session?.user.email 
 export const dismissRecovery = () => set({ recovery: false });
 
 export async function signInWithGoogle(): Promise<void> {
-  if (!client) throw new Error('Accounts are not set up on this site');
+  if (!client) throw new Plain('Accounts aren’t available on this site.');
   const { error } = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: here() } });
   if (error) throw error;
 }

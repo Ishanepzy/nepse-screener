@@ -42,7 +42,8 @@ function decode(s: string): string {
   }
 }
 
-export type Page = 'screener' | 'watchlist' | 'leaders' | 'rotation' | 'journal' | 'calculator';
+// 'users' is the admins' page, reached from the account menu rather than a tab
+export type Page = 'screener' | 'watchlist' | 'leaders' | 'rotation' | 'journal' | 'calculator' | 'users';
 
 export const PAGES: { id: Page; label: string; title: string }[] = [
   { id: 'screener', label: 'Screener', title: 'Scan every stock for technical signals' },
@@ -60,7 +61,7 @@ export const pageHash = (page: Page, symbol?: string | null) =>
 // null when the hash is a chart
 export function pageFromHash(hash: string): { page: Page; symbol: string | null } | null {
   if (chartFromHash(hash)) return null;
-  const m = /^#\/(watchlist|leaders|rotation|journal|calculator)(?:\/([^/?#]+))?$/.exec(hash);
+  const m = /^#\/(watchlist|leaders|rotation|journal|calculator|users)(?:\/([^/?#]+))?$/.exec(hash);
   if (m) return { page: m[1] as Page, symbol: m[2] ? decode(m[2]) : null };
   return { page: 'screener', symbol: null };
 }
