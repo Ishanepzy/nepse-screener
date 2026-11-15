@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Condition, Market, ScreenResponse } from '../shared/types.ts';
-import type { BacktestTrade } from '../shared/backtest.ts';
 import { PRESETS } from '../shared/presets.ts';
 import { api, type DataInfo, type OverviewItem } from './api.ts';
 import {
@@ -31,7 +30,6 @@ import { MarketBand } from './components/MarketBand.tsx';
 import { LeadersPage } from './components/LeadersPage.tsx';
 import { CalculatorPage } from './components/CalculatorPage.tsx';
 import { JournalPage } from './components/JournalPage.tsx';
-import { BacktestPage } from './components/BacktestPage.tsx';
 import { AccountMenu } from './components/AccountMenu.tsx';
 import { WatchlistPage } from './components/WatchlistPage.tsx';
 import { RotationPage } from './components/RotationPage.tsx';
@@ -116,13 +114,8 @@ export function App() {
     setPage({ page: next, symbol });
     window.scrollTo(0, 0);
   }, []);
-  // a chart opened from the backtest marks that test's buy signals, and draws its trades
-  const [chartConds, setChartConds] = useState<Condition[]>([]);
-  const [chartTrades, setChartTrades] = useState<BacktestTrade[] | null>(null);
-  const openChart = useCallback((symbol: string, list: string[], conditions: Condition[] = [], trades: BacktestTrade[] | null = null) => {
+  const openChart = useCallback((symbol: string, list: string[]) => {
     setChartList(list);
-    setChartConds(conditions);
-    setChartTrades(trades);
     history.pushState(null, '', chartHash(symbol));
     chartPushed.current = true;
     setChart(symbol);
@@ -352,16 +345,6 @@ export function App() {
             scanLabel={PRESETS.find((p) => p.id === preset)?.name ?? 'Your scan'}
           />
         )}
-        {page.page === 'backtest' && (
-          <BacktestPage
-            version={version}
-            theme={theme}
-            scanConditions={scan.conditions}
-            scanMatch={scan.match}
-            scanSymbols={shownSymbols}
-            onOpenChart={openChart}
-          />
-        )}
         {page.page === 'journal' && <JournalPage version={version} onOpenChart={openChart} />}
         {page.page === 'calculator' && (
           <CalculatorPage
@@ -384,8 +367,7 @@ export function App() {
       {chart && (
         <ChartPage
           symbol={chart}
-          conditions={page.page === 'screener' ? scan.conditions : chartConds}
-          backtestTrades={page.page === 'screener' ? null : chartTrades}
+          conditions={page.page === 'screener' ? scan.conditions : []}
           trendTemplate={page.page === 'screener' && !!scan.universe.trendTemplate}
           canslim={page.page === 'screener' && !!scan.universe.canslim}
           marketUp={market?.uptrend ?? null}

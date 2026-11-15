@@ -2537,79 +2537,162 @@ td.old-chg {
   gap: 4px;
 }
 
-/* ---------- backtest ---------- */
+/* ---------- backtest (chart replay) ---------- */
 
-.backtest {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+.rp {
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  max-height: 290px;
 }
-.bt-block {
+.rp-main {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+  min-width: 0;
+  padding: 12px 16px;
+  overflow: auto;
 }
-.bt-label {
+.rp-account,
+.rp-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+}
+.rp-account dt,
+.rp-stats dt {
   font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   color: var(--muted);
 }
-.bt-block .match-line {
+.rp-account dd,
+.rp-stats dd {
+  margin: 2px 0 0;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.rp-stats {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+.rp-stats > div {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.rp-tabs {
+  align-self: flex-start;
+}
+.rp-table table {
+  font-size: var(--fs-sm);
+}
+.rp-empty {
+  margin: 4px 0;
+}
+.rp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  border-left: 1px solid var(--border);
+  overflow: auto;
+}
+.rp-clock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.rp-clock > div {
+  display: flex;
+  flex-direction: column;
+}
+.rp-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rp-controls input[type='range'] {
+  flex: 1;
+  min-width: 60px;
+  margin-left: 8px;
+}
+.rp-play {
+  color: var(--accent);
+  font-size: 18px;
+}
+.rp-note {
   margin: 0;
 }
-.bt-block .conds {
-  margin: 0;
-}
-.bt-fields {
+.rp-ticket {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 22px;
-}
-.bt-rule {
-  max-width: 100%;
-}
-.bt-run {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 16px;
-  margin-top: 20px;
-}
-.bt-results {
-  padding: 20px 24px;
-}
-.bt-results .section-title .muted {
-  font-weight: 500;
-}
-.bt-chart {
-  height: 340px;
-  margin-top: 18px;
-}
-.bt-reasons {
-  display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
-  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
 }
-.chip.static {
-  cursor: default;
+.rp-ticket p {
+  margin: 0;
 }
-.bt-caveat {
-  margin: 14px 0 0;
-  max-width: 820px;
+.rp-side-pick button {
+  flex: 1;
+}
+.rp-side-pick .on.buy {
+  background: color-mix(in srgb, var(--up) 18%, transparent);
+  color: var(--up);
+}
+.rp-side-pick .on.sell {
+  background: color-mix(in srgb, var(--down) 18%, transparent);
+  color: var(--down);
+}
+.rp-confirm.buy {
+  background: var(--up);
+  border-color: var(--up);
+}
+.rp-confirm.sell {
+  background: var(--down);
+  border-color: var(--down);
+}
+.rp-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rp-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.btn.exit-replay {
+  color: var(--down);
+  border-color: color-mix(in srgb, var(--down) 50%, transparent);
 }
 @media (max-width: 720px) {
-  .bt-results {
-    padding: 16px;
+  .rp {
+    grid-template-columns: minmax(0, 1fr);
+    max-height: 34vh;
+    overflow: auto;
   }
-  .bt-chart {
-    height: 260px;
+  /* the chart keeps a usable height; the panel scrolls instead */
+  .chart-page:has(.rp) .cp-body {
+    min-height: 240px;
+  }
+  .rp-main,
+  .rp-side {
+    overflow: visible;
+  }
+  .rp-side {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    order: -1;
   }
 }
 

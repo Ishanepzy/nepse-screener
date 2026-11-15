@@ -10,6 +10,7 @@ import {
   createChart,
   createSeriesMarkers,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type SeriesMarker,
@@ -41,9 +42,9 @@ import { CanSlimLetters, RsBadge, StageBadge, TrendTemplateBadge } from './Badge
 import { StarButton } from './StarButton.tsx';
 import { TREND_TEMPLATE, TREND_TEMPLATE_SHORT } from '../../shared/analysis.ts';
 import { load, save } from '../storage.ts';
-import type { BacktestStats, BacktestTrade, ExitReason } from '../../shared/backtest.ts';
-import { loadSetup } from '../backtestSetup.ts';
 import { loadRates } from '../costsStore.ts';
+import { loadReplay, maxBuy, replayAccount, replayStats, saveReplay, type ReplaySession } from '../replay.ts';
+import { ReplayPanel } from './ReplayPanel.tsx';
 
 // colour-blind-safe order, checked on both backgrounds
 const PALETTE = {
@@ -86,8 +87,6 @@ interface Props {
   onNavigate: (symbol: string) => void;
   onClose: () => void;
   onSizePosition: (symbol: string) => void;
-  // opened from the backtest: that test's trades (every stock's; the chart shows this one's)
-  backtestTrades?: BacktestTrade[] | null;
 }
 
 interface Parts {
@@ -115,26 +114,22 @@ export function ChartPage({
   onNavigate,
   onClose,
   onSizePosition,
-  backtestTrades = null,
 }: Props) {
-  const [data, setData] = useState<ChartResponse | null>(null);
+  const [fetched, setData] = useState<ChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<Range>('1Y');
   const [hover, setHover] = useState<number | null>(null);
   const [parts, setParts] = useState<Parts | null>(null);
   const [showVolume, setShowVolumeState] = useState(() => load(VOLUME_KEY) !== 0);
-  // from the backtest its trades say more than the raw signals, so the signals start hidden
-  const [showSignals, setShowSignals] = useState(() => !backtestTrades);
-  // trades on the chart: the backtest's that opened it, or a test of this one stock with the saved rules
-  const [btOn, setBtOn] = useState(() => !!backtestTrades);
-  const [btRun, setBtRun] = useState<{ symbol: string; trades: BacktestTrade[]; stats: BacktestStats } | null>(null);
-  const [btBusy, setBtBusy] = useState(false);
-  const [btError, setBtError] = useState<string | null>(null);
-  const tradeSeries = useRef<ISeriesApi<'Line'>[]>([]);
-  useEffect(() => {
-    setBtOn(!!backtestTrades);
-    setShowSignals(!backtestTrades);
-  }, [backtestTrades]);
+  const [showSignals, setShowSignals] = useState(true);
+  // Backtest: the chart replayed from a past day and traded by hand (src/replay.ts). The page draws `data`, which in
+  // a replay stops at the day shown, so nothing after it reaches the candles, the indicators or the legend.
+  const [replay, setReplayState] = useState<ReplaySession | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(2);
+  const [stepSize, setStepSize] = useState(1);
+  const data = useMemo(() => (fetched && replay ? replayView(fetched, replay.at) : fetched), [fetched, replay?.at]);
+  const avgLine = useRef<IPriceLine | null>(null);
   const [toolId, setTool] = useState<ToolId | null>(null);
   const tool = toolById(toolId);
   const [selected, setSelected] = useState<string | null>(null);
@@ -219,31 +214,66 @@ export function ChartPage({
     setSelected(null);
     setTool(null);
     setEditing(null);
+    setReplayState(null);
+    setPlaying(false);
   }, [shownSymbol]);
   const selectedDrawing = drawings.find((d) => d.id === selected) ?? null;
 
-  // the toolbar's test: this stock alone with the saved backtest rules, the whole account in each trade
+  // ---------- backtest (replay) ----------
+  const full = fetched?.bars;
+  const rates = useMemo(() => loadRates(), [replay?.fees]);
+  const fees = replay?.fees ? rates : null;
+  // the day shown, and how far back stepping can go: not before the start, nor before the last order
+  const atIdx = useMemo(() => (full && replay ? lastIndexOnOrBefore(full.t, replay.at) : -1), [full, replay?.at]);
+  const startIdx = full && replay ? Math.max(0, full.t.findIndex((d) => d >= replay.start)) : -1;
+  const lastFillIdx = full && replay?.fills.length ? lastIndexOnOrBefore(full.t, replay.fills.reduce((m, f) => (f.date > m ? f.date : m), '')) : -1;
+  const floorIdx = Math.max(startIdx, lastFillIdx);
+  const account = useMemo(() => (replay && full ? replayAccount(replay, full, fees) : null), [replay, full, fees]);
+  const stats = useMemo(() => (replay && account ? replayStats(replay, account) : null), [replay, account]);
+  const setReplay = (next: ReplaySession) => {
+    setReplayState(next);
+    if (shownSymbol) saveReplay(shownSymbol, next);
+  };
+  const enterReplay = () => {
+    if (!full?.t.length || !shownSymbol) return;
+    const saved = loadReplay(shownSymbol);
+    // a year back to start with; a saved session picks up where it was left
+    const first = full.t[Math.max(0, full.t.length - 250)];
+    setTool(null);
+    setReplay(saved && saved.at <= full.t[full.t.length - 1] ? saved : { start: first, at: first, balance: 100_000, fees: true, fills: [] });
+  };
+  const exitReplay = () => {
+    setPlaying(false);
+    setReplayState(null);
+  };
+  const stepReplay = (dir: 1 | -1, bars = stepSize) => {
+    if (!replay || !full || atIdx < 0) return;
+    const next = dir > 0 ? Math.min(full.t.length - 1, atIdx + bars) : Math.max(floorIdx, atIdx - bars);
+    if (next !== atIdx) setReplay({ ...replay, at: full.t[next] });
+  };
+  const stepRef = useRef(stepReplay);
+  stepRef.current = stepReplay;
   useEffect(() => {
-    if (!btOn || backtestTrades || !shownSymbol || btRun?.symbol === shownSymbol) return;
-    const setup = loadSetup();
-    if (!setup.entry.conditions.length) return setBtError('Set a buy rule on the Backtest page first.');
-    let off = false;
-    setBtBusy(true);
-    setBtError(null);
-    api
-      .backtest({ ...setup, symbols: [shownSymbol], positionPct: 100, maxPositions: 1, minTurnover: 0, rates: setup.fees ? loadRates() : undefined })
-      .then((r) => !off && setBtRun({ symbol: shownSymbol, trades: r.trades, stats: r.stats }))
-      .catch((e) => !off && setBtError(e.message))
-      .finally(() => !off && setBtBusy(false));
-    return () => {
-      off = true;
-    };
-  }, [btOn, backtestTrades, shownSymbol]);
-  const btTrades = useMemo(() => {
-    if (!btOn || !shownSymbol) return [];
-    if (backtestTrades) return backtestTrades.filter((t) => t.symbol === shownSymbol);
-    return btRun?.symbol === shownSymbol ? btRun.trades : [];
-  }, [btOn, shownSymbol, backtestTrades, btRun]);
+    if (!playing) return;
+    const id = setInterval(() => stepRef.current(1, 1), 1000 / speed);
+    return () => clearInterval(id);
+  }, [playing, speed]);
+  const atEnd = !!full && atIdx >= full.t.length - 1;
+  useEffect(() => {
+    if (playing && atEnd) setPlaying(false);
+  }, [playing, atEnd]);
+  const placeOrder = (side: 'buy' | 'sell', shares: number) => {
+    if (!replay || !full || atIdx < 0) return;
+    setReplay({ ...replay, fills: [...replay.fills, { date: replay.at, side, shares, price: full.c[atIdx] }] });
+  };
+  const restartReplay = (start: string, balance: number, withFees: boolean) => {
+    if (!full) return;
+    const i = full.t.findIndex((d) => d >= start);
+    const first = full.t[i < 0 ? full.t.length - 1 : i];
+    setPlaying(false);
+    setReplay({ start: first, at: first, balance, fees: withFees, fills: [] });
+  };
+
   const deleteSelected = () => {
     if (!selectedDrawing) return;
     commitDrawings(drawings.filter((d) => d.id !== selectedDrawing.id));
@@ -295,6 +325,18 @@ export function ChartPage({
         if (t) {
           e.preventDefault();
           setTool(toolId === t.id ? null : t.id);
+          return;
+        }
+      }
+      if (replay && !mod && !e.altKey) {
+        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          if (!playing) stepReplay(e.key === 'ArrowRight' ? 1 : -1);
+          return;
+        }
+        if (e.key === ' ' && !(e.target instanceof Element && e.target.closest('button'))) {
+          e.preventDefault();
+          if (!atEnd) setPlaying(!playing);
           return;
         }
       }
@@ -361,7 +403,7 @@ export function ChartPage({
     return () => {
       liveParts.current = null;
       indicatorSeries.current = [];
-      tradeSeries.current = [];
+      avgLine.current = null;
       setParts(null);
       chart.remove();
     };
@@ -378,7 +420,11 @@ export function ChartPage({
     const n = b.t.length;
     builtBars.current = b;
     const lastBarOnly = old && n >= 2 && (n === old.t.length || n === old.t.length + 1) && old.t[n - 2] === b.t[n - 2];
-    if (!lastBarOnly) return setBars(parts.candles, parts.volume, b);
+    if (!lastBarOnly) {
+      setBars(parts.candles, parts.volume, b);
+      parts.chart.timeScale().scrollToRealTime();
+      return;
+    }
     const i = n - 1;
     const css = getComputedStyle(document.documentElement);
     const color = css.getPropertyValue(b.c[i] >= b.o[i] ? '--up' : '--down').trim() + '55';
@@ -417,45 +463,28 @@ export function ChartPage({
           text: m.text,
         }))
       : [];
-    for (const t of btTrades) {
-      list.push({ time: t.entryDate, position: 'belowBar', color: v('--accent'), shape: 'arrowUp', text: 'Buy' });
-      list.push({
-        time: t.exitDate,
-        position: 'aboveBar',
-        color: v(t.pnl > 0 ? '--up' : '--down'),
-        shape: 'arrowDown',
-        text: `${EXIT_SHORT[t.reason]} ${t.ret > 0 ? '+' : ''}${t.ret.toFixed(1)}%`,
-      });
+    for (const f of replay?.fills ?? []) {
+      if (f.date > (replay?.at ?? '')) continue;
+      list.push(
+        f.side === 'buy'
+          ? { time: f.date, position: 'belowBar', color: v('--up'), shape: 'arrowUp', text: `B ${fmt.price(f.price)}` }
+          : { time: f.date, position: 'aboveBar', color: v('--down'), shape: 'arrowDown', text: `S ${fmt.price(f.price)}` },
+      );
     }
     list.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
     parts.markers.setMarkers(list);
-  }, [parts, data, showSignals, btTrades]);
+  }, [parts, data, showSignals, replay?.fills]);
 
-  // each trade as a dashed line from the buy to the sale: green for a profit, red for a loss
+  // while holding shares in a replay: a line at their average cost
+  const avgCost = account?.avgCost ?? null;
   useEffect(() => {
     if (!isLive(parts)) return;
-    const { chart } = parts;
-    for (const s of tradeSeries.current) chart.removeSeries(s);
-    tradeSeries.current = [];
-    const css = getComputedStyle(document.documentElement);
-    for (const t of btTrades) {
-      const s = chart.addSeries(LineSeries, {
-        color: css.getPropertyValue(t.pnl > 0 ? '--up' : '--down').trim(),
-        lineWidth: 2,
-        lineStyle: LineStyle.Dashed,
-        pointMarkersVisible: true,
-        pointMarkersRadius: 3,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerVisible: false,
-      });
-      s.setData([
-        { time: t.entryDate, value: t.entryPrice },
-        { time: t.exitDate, value: t.exitPrice },
-      ]);
-      tradeSeries.current.push(s);
-    }
-  }, [parts, btTrades]);
+    if (avgLine.current) parts.candles.removePriceLine(avgLine.current);
+    avgLine.current = null;
+    if (avgCost == null) return;
+    const color = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    avgLine.current = parts.candles.createPriceLine({ price: avgCost, color, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Avg cost' });
+  }, [parts, avgCost]);
   useEffect(() => {
     if (!isLive(parts) || !data) return;
     const { chart } = parts;
@@ -617,7 +646,7 @@ export function ChartPage({
             <span className="muted small hide-sm">{b.t[n - 1]}</span>
           </div>
         )}
-        {data?.profile && data.symbol === symbol && (
+        {data?.profile && data.symbol === symbol && !replay && (
           <div className="cp-badges hide-sm" aria-label="Strength">
             <span className="cp-badge">
               RS <RsBadge rs={data.profile.rs} />
@@ -666,18 +695,15 @@ export function ChartPage({
           </label>
         )}
         <div className="spacer" />
-        <button
-          className={`btn ${btOn ? 'on' : ''}`}
-          aria-pressed={btOn}
-          onClick={() => setBtOn(!btOn)}
-          title={
-            backtestTrades
-              ? 'Show or hide the trades from your backtest'
-              : 'Test your backtest rules on this stock and draw the trades. The rules are the ones on the Backtest page.'
-          }
-        >
-          Backtest
-        </button>
+        {replay ? (
+          <button className="btn exit-replay" onClick={exitReplay} title="Back to the live chart. This stock's session is kept.">
+            Exit backtest
+          </button>
+        ) : (
+          <button className="btn" onClick={enterReplay} disabled={!full?.t.length} title="Replay this chart from a past day and trade it by hand, a day at a time">
+            Backtest
+          </button>
+        )}
         <button className="btn" onClick={() => onSizePosition(symbol)} title="How many shares to buy for the risk you choose">
           Position size
         </button>
@@ -769,7 +795,6 @@ export function ChartPage({
                 <span className={tone(chg)}>{fmt.pct(chg)}</span>
                 {showVolume && <span>Vol {fmt.int(b.v[i])}</span>}
               </div>
-              {btOn && <BacktestLegend trades={btTrades} busy={btBusy} error={btError} fromTest={!!backtestTrades} onClose={() => setBtOn(false)} />}
               {indicators.map((ind) => {
                 const lines = computed.get(ind.uid);
                 const def = getDef(ind.id);
@@ -818,6 +843,31 @@ export function ChartPage({
           {error && <p className="notice error cp-error">{error}</p>}
         </div>
       </div>
+      {replay && account && stats && full && atIdx >= 0 && (
+        <ReplayPanel
+          symbol={symbol}
+          session={replay}
+          account={account}
+          stats={stats}
+          price={full.c[atIdx]}
+          maxBuy={maxBuy(account.cash, full.c[atIdx], fees)}
+          canBack={atIdx > floorIdx}
+          backHint={atIdx > floorIdx ? null : lastFillIdx >= startIdx && atIdx === lastFillIdx ? 'Undo the last order to go further back' : 'This is where the session starts'}
+          atEnd={atEnd}
+          playing={playing}
+          speed={speed}
+          step={stepSize}
+          firstDate={full.t[0]}
+          lastDate={full.t[Math.max(0, full.t.length - 2)]}
+          onStep={(dir) => stepReplay(dir)}
+          onPlay={() => setPlaying(!playing)}
+          onSpeed={setSpeed}
+          onStepSize={setStepSize}
+          onOrder={placeOrder}
+          onUndo={() => setReplay({ ...replay, fills: replay.fills.slice(0, -1) })}
+          onRestart={restartReplay}
+        />
+      )}
     </div>
   );
 }
@@ -870,40 +920,34 @@ function CanSlimLinesLegend({ lines, i, colors }: { lines: Record<string, number
   );
 }
 
-const EXIT_SHORT: Record<ExitReason, string> = { stop: 'Stop', trail: 'Trail', target: 'Target', signal: 'Sell', time: 'Time', end: 'Open' };
+// index of the last date on or before `d`; -1 if none
+function lastIndexOnOrBefore(t: string[], d: string): number {
+  let i = t.length - 1;
+  while (i >= 0 && t[i] > d) i--;
+  return i;
+}
 
-function BacktestLegend({ trades, busy, error, fromTest, onClose }: { trades: BacktestTrade[]; busy: boolean; error: string | null; fromTest: boolean; onClose: () => void }) {
-  const wins = trades.filter((t) => t.pnl > 0).length;
-  // one trade after another, each with what the last one left
-  const total = (trades.reduce((m, t) => m * (1 + t.ret / 100), 1) - 1) * 100;
-  const source = fromTest ? 'from your backtest' : 'your saved rules';
-  return (
-    <div className="lg-row lg-ind lg-bt" title={`Trades ${source}. Blue arrows are buys; the arrow above a bar is the sale, with why it sold and the return after fees.`}>
-      <span>Backtest</span>
-      {busy ? (
-        <span className="muted">testing…</span>
-      ) : error ? (
-        <span className="down">{error}</span>
-      ) : trades.length ? (
-        <>
-          <b>
-            {trades.length} {trades.length === 1 ? 'trade' : 'trades'}
-          </b>
-          <span>{Math.round((wins / trades.length) * 100)}% won</span>
-          <b className={total > 0 ? 'up' : total < 0 ? 'down' : ''}>
-            {total > 0 ? '+' : ''}
-            {total.toFixed(1)}% in all
-          </b>
-          <span className="muted">{source}</span>
-        </>
-      ) : (
-        <span className="muted">no trades {fromTest ? 'for this stock in that test' : 'with your saved rules'}</span>
-      )}
-      <button className="lg-remove" aria-label="Hide the backtest" title="Hide" onClick={onClose}>
-        ×
-      </button>
-    </div>
-  );
+// the chart's data as it stood on day `at`: everything after it cut off
+function replayView(d: ChartResponse, at: string): ChartResponse {
+  const n = lastIndexOnOrBefore(d.bars.t, at) + 1;
+  const b = d.bars;
+  const head = (a: number[] | undefined) => a?.slice(0, n);
+  return {
+    ...d,
+    bars: {
+      t: b.t.slice(0, n),
+      o: b.o.slice(0, n),
+      h: b.h.slice(0, n),
+      l: b.l.slice(0, n),
+      c: b.c.slice(0, n),
+      v: b.v.slice(0, n),
+      ix: head(b.ix),
+      rs: head(b.rs),
+      mkt: head(b.mkt),
+      cai: b.cai && { c: b.cai.c.slice(0, n), a: b.cai.a.slice(0, n), i: b.cai.i.slice(0, n) },
+    },
+    markers: d.markers.filter((m) => m.date <= at),
+  };
 }
 
 function setBars(candles: ISeriesApi<'Candlestick'> | null, volume: ISeriesApi<'Histogram'> | null, bars: ChartResponse['bars']) {
