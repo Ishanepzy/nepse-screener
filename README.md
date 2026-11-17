@@ -143,7 +143,8 @@ and capital gains tax of 7.5% or 5%. Brokers differ and rates change, so all of 
 
 ## Data
 
-Prices come from merolagani.com's public endpoints, adjusted for bonus and right shares.
+Prices come from merolagani.com's public endpoints, adjusted for bonus and right shares. Company results and
+mutual fund holdings (C, A and I of CAN SLIM) come from nepsetrading.com, as described above.
 
 - Every run downloads the full history again. A bonus issue re-adjusts all past prices, so appending would go wrong.
 - The data file keeps 4 years per symbol. With 3, EMA(200) hadn't settled and a few signals came out different
@@ -156,8 +157,10 @@ between 10:30 and 15:15 Nepal time and treats each read as today's bar. The feed
 index stays at the last close until the evening build. Their SignalR channel refuses other origins, which is why
 this polls.
 
-Watchlist, journal, saved scans, drawings and settings are kept in the browser (localStorage). The journal has
-backup and restore.
+Saved things (watchlist, journal, saved scans, drawings, backtest sessions and settings) live in the user's account
+when accounts are set up, with a copy in the browser so pages open straight away. Built without Supabase settings,
+they stay in the browser only (localStorage). The light or dark theme is always kept per browser. The journal can
+also be backed up to a file and restored.
 
 ### If prices stop updating
 

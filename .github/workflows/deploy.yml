@@ -65,9 +65,10 @@ jobs:
           path: data
           key: nepse-data-${{ github.run_id }}
 
-      # Sign-in (optional): set these under Settings -> Secrets and variables -> Actions -> Variables. They go into the
-      # page, which is fine: the publishable key is meant to be public, and the table's row level security does the
-      # protecting. Without them the site keeps everything in the browser.
+      # Accounts: set these under Settings -> Secrets and variables -> Actions -> Variables. They go into the page,
+      # which is fine: the publishable key is meant to be public, and the database's row level security does the
+      # protecting. With them the site is for approved accounts only. Without them (deleted, or a fork's build) the
+      # site is open to everyone and keeps everything in the browser.
       - run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
